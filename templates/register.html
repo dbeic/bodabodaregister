@@ -1,0 +1,305 @@
+{% extends "base.html" %}
+
+{% block title %}Register Member - Bodaboda SACCO{% endblock %}
+
+{% block extra_css %}
+<style>
+    .camera-container {
+        background: #f8f9fa;
+        border-radius: 10px;
+        padding: 20px;
+        text-align: center;
+        border: 2px dashed #dee2e6;
+    }
+    
+    #video {
+        width: 100%;
+        max-width: 400px;
+        border-radius: 10px;
+        display: none;
+    }
+    
+    #canvas {
+        display: none;
+    }
+    
+    .capture-area {
+        position: relative;
+    }
+    
+    .photo-preview {
+        max-width: 200px;
+        max-height: 200px;
+        border-radius: 10px;
+        margin: 10px auto;
+        display: block;
+    }
+    
+    .form-section {
+        background: white;
+        border-radius: 15px;
+        padding: 2rem;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        margin-bottom: 2rem;
+    }
+    
+    .form-section-title {
+        color: var(--dark-blue);
+        border-bottom: 2px solid var(--gold);
+        padding-bottom: 0.5rem;
+        margin-bottom: 1.5rem;
+        display: flex;
+        align-items: center;
+    }
+    
+    .form-section-title i {
+        color: var(--gold);
+        margin-right: 10px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="row">
+        <div class="col-12">
+            <h2 class="mb-4">
+                <i class="fas fa-user-plus text-gold"></i>
+                Register New Member
+            </h2>
+            <p class="text-muted">Fill in the details below to register a new bodaboda member.</p>
+        </div>
+    </div>
+
+    <form method="POST" enctype="multipart/form-data" id="registerForm" novalidate>
+        {{ form.hidden_tag() }}
+        
+        <!-- Personal Details -->
+        <div class="form-section">
+            <h5 class="form-section-title">
+                <i class="fas fa-user"></i>
+                Personal Details
+            </h5>
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label for="full_name" class="form-label required">Full Names</label>
+                    <input type="text" class="form-control" id="full_name" name="full_name" required>
+                    <div class="invalid-feedback">Please enter full names.</div>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label for="member_number" class="form-label required">Bodaboda Member Number</label>
+                    <input type="text" class="form-control" id="member_number" name="member_number" required>
+                    <div class="invalid-feedback">Please enter member number.</div>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label for="national_id" class="form-label required">National ID Number</label>
+                    <input type="text" class="form-control" id="national_id" name="national_id" required>
+                    <div class="invalid-feedback">Please enter valid National ID.</div>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label for="telephone" class="form-label required">Telephone Number</label>
+                    <input type="tel" class="form-control" id="telephone" name="telephone" required>
+                    <div class="invalid-feedback">Please enter valid telephone number.</div>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label for="motorcycle_registration" class="form-label required">Motorcycle Registration</label>
+                    <input type="text" class="form-control" id="motorcycle_registration" name="motorcycle_registration" required>
+                    <div class="invalid-feedback">Please enter motorcycle registration number.</div>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label for="group_stage_name" class="form-label required">Group/Stage Name</label>
+                    <input type="text" class="form-control" id="group_stage_name" name="group_stage_name" required>
+                    <div class="invalid-feedback">Please enter group/stage name.</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Chairman Details -->
+        <div class="form-section">
+            <h5 class="form-section-title">
+                <i class="fas fa-handshake"></i>
+                Chairman Details
+            </h5>
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label for="chairman_name" class="form-label required">Chairman Name</label>
+                    <input type="text" class="form-control" id="chairman_name" name="chairman_name" required>
+                    <div class="invalid-feedback">Please enter chairman name.</div>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label for="chairman_phone" class="form-label required">Chairman Telephone</label>
+                    <input type="tel" class="form-control" id="chairman_phone" name="chairman_phone" required>
+                    <div class="invalid-feedback">Please enter chairman telephone.</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Next of Kin Details -->
+        <div class="form-section">
+            <h5 class="form-section-title">
+                <i class="fas fa-heart"></i>
+                Next of Kin Details
+            </h5>
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label for="next_of_kin_name" class="form-label required">Next of Kin Name</label>
+                    <input type="text" class="form-control" id="next_of_kin_name" name="next_of_kin_name" required>
+                    <div class="invalid-feedback">Please enter next of kin name.</div>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label for="next_of_kin_phone" class="form-label required">Next of Kin Telephone</label>
+                    <input type="tel" class="form-control" id="next_of_kin_phone" name="next_of_kin_phone" required>
+                    <div class="invalid-feedback">Please enter next of kin telephone.</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Passport Photo -->
+        <div class="form-section">
+            <h5 class="form-section-title">
+                <i class="fas fa-camera"></i>
+                Passport Photo
+            </h5>
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label for="passport_photo" class="form-label required">Upload Photo</label>
+                        <input type="file" class="form-control" id="passport_photo" name="passport_photo" accept="image/*">
+                        <small class="text-muted">Supported formats: JPG, JPEG, PNG (Max 16MB)</small>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="camera-container">
+                        <p class="text-muted mb-2">Or capture from camera</p>
+                        <button type="button" class="btn btn-primary mb-2" id="openCamera">
+                            <i class="fas fa-camera"></i> Open Camera
+                        </button>
+                        <div class="capture-area">
+                            <video id="video" autoplay playsinline></video>
+                            <canvas id="canvas"></canvas>
+                            <div id="photoPreview"></div>
+                        </div>
+                        <button type="button" class="btn btn-success mt-2" id="capturePhoto" style="display:none;">
+                            <i class="fas fa-camera"></i> Capture Photo
+                        </button>
+                        <button type="button" class="btn btn-danger mt-2" id="closeCamera" style="display:none;">
+                            <i class="fas fa-times"></i> Close Camera
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="text-center mt-4">
+            <button type="submit" class="btn btn-gold btn-lg">
+                <i class="fas fa-user-plus me-2"></i>Register Member
+            </button>
+            <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary btn-lg">
+                <i class="fas fa-arrow-left me-2"></i>Cancel
+            </a>
+        </div>
+    </form>
+</div>
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Form validation
+    const form = document.getElementById('registerForm');
+    form.addEventListener('submit', function(event) {
+        if (!form.checkValidity()) {
+            event.preventDefault();
+            event.stopPropagation();
+        }
+        form.classList.add('was-validated');
+    });
+
+    // Camera functionality
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const openCameraBtn = document.getElementById('openCamera');
+    const captureBtn = document.getElementById('capturePhoto');
+    const closeBtn = document.getElementById('closeCamera');
+    const photoPreview = document.getElementById('photoPreview');
+    const fileInput = document.getElementById('passport_photo');
+    let stream = null;
+
+    openCameraBtn.addEventListener('click', async function() {
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({ 
+                video: { facingMode: 'user' } 
+            });
+            video.srcObject = stream;
+            video.style.display = 'block';
+            captureBtn.style.display = 'inline-block';
+            closeBtn.style.display = 'inline-block';
+            openCameraBtn.style.display = 'none';
+        } catch (err) {
+            alert('Unable to access camera. Please upload a photo instead.');
+            console.error('Camera error:', err);
+        }
+    });
+
+    captureBtn.addEventListener('click', function() {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        canvas.getContext('2d').drawImage(video, 0, 0);
+        
+        // Convert to blob
+        canvas.toBlob(function(blob) {
+            // Create File object
+            const file = new File([blob], 'passport_photo.jpg', { type: 'image/jpeg' });
+            const dataTransfer = new DataTransfer();
+            dataTransfer.items.add(file);
+            fileInput.files = dataTransfer.files;
+            
+            // Show preview
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                photoPreview.innerHTML = `
+                    <img src="${e.target.result}" class="photo-preview" alt="Captured photo">
+                    <p class="text-success mt-1"><i class="fas fa-check-circle"></i> Photo captured</p>
+                `;
+            };
+            reader.readAsDataURL(file);
+            
+            // Close camera
+            closeCamera();
+        }, 'image/jpeg', 0.95);
+    });
+
+    closeBtn.addEventListener('click', closeCamera);
+
+    function closeCamera() {
+        if (stream) {
+            stream.getTracks().forEach(track => track.stop());
+            stream = null;
+        }
+        video.style.display = 'none';
+        captureBtn.style.display = 'none';
+        closeBtn.style.display = 'none';
+        openCameraBtn.style.display = 'inline-block';
+    }
+
+    // Photo preview for file upload
+    fileInput.addEventListener('change', function(e) {
+        const file = this.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                photoPreview.innerHTML = `
+                    <img src="${e.target.result}" class="photo-preview" alt="Uploaded photo">
+                    <p class="text-success mt-1"><i class="fas fa-check-circle"></i> Photo uploaded</p>
+                `;
+            };
+            reader.readAsDataURL(file);
+        }
+    });
+});
+</script>
+{% endblock %}
+{% endblock %}

@@ -1,0 +1,244 @@
+{% extends "base.html" %}
+
+{% block title %}Edit Member - Bodaboda SACCO{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="row">
+        <div class="col-12">
+            <h2>
+                <i class="fas fa-edit text-gold"></i>
+                Edit Member Details
+            </h2>
+            <p class="text-muted">Update member information for {{ member.full_name }}.</p>
+        </div>
+    </div>
+
+    <form method="POST" enctype="multipart/form-data" id="editForm" novalidate>
+        {{ form.hidden_tag() }}
+        
+        <div class="row">
+            <div class="col-md-8">
+                <!-- Personal Details -->
+                <div class="form-section">
+                    <h5 class="form-section-title">
+                        <i class="fas fa-user"></i>
+                        Personal Details
+                    </h5>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="full_name" class="form-label required">Full Names</label>
+                            <input type="text" class="form-control" id="full_name" name="full_name" 
+                                   value="{{ member.full_name }}" required>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="member_number" class="form-label required">Bodaboda Member Number</label>
+                            <input type="text" class="form-control" id="member_number" name="member_number" 
+                                   value="{{ member.member_number }}" required>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="national_id" class="form-label required">National ID Number</label>
+                            <input type="text" class="form-control" id="national_id" name="national_id" 
+                                   value="{{ member.national_id }}" required>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="telephone" class="form-label required">Telephone Number</label>
+                            <input type="tel" class="form-control" id="telephone" name="telephone" 
+                                   value="{{ member.telephone }}" required>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="motorcycle_registration" class="form-label required">Motorcycle Registration</label>
+                            <input type="text" class="form-control" id="motorcycle_registration" name="motorcycle_registration" 
+                                   value="{{ member.motorcycle_registration or '' }}" required>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="group_stage_name" class="form-label required">Group/Stage Name</label>
+                            <input type="text" class="form-control" id="group_stage_name" name="group_stage_name" 
+                                   value="{{ member.group_stage_name or '' }}" required>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Chairman Details -->
+                <div class="form-section">
+                    <h5 class="form-section-title">
+                        <i class="fas fa-handshake"></i>
+                        Chairman Details
+                    </h5>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="chairman_name" class="form-label required">Chairman Name</label>
+                            <input type="text" class="form-control" id="chairman_name" name="chairman_name" 
+                                   value="{{ member.chairman_name or '' }}" required>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="chairman_phone" class="form-label required">Chairman Telephone</label>
+                            <input type="tel" class="form-control" id="chairman_phone" name="chairman_phone" 
+                                   value="{{ member.chairman_phone or '' }}" required>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Next of Kin Details -->
+                <div class="form-section">
+                    <h5 class="form-section-title">
+                        <i class="fas fa-heart"></i>
+                        Next of Kin Details
+                    </h5>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="next_of_kin_name" class="form-label required">Next of Kin Name</label>
+                            <input type="text" class="form-control" id="next_of_kin_name" name="next_of_kin_name" 
+                                   value="{{ member.next_of_kin_name or '' }}" required>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="next_of_kin_phone" class="form-label required">Next of Kin Telephone</label>
+                            <input type="tel" class="form-control" id="next_of_kin_phone" name="next_of_kin_phone" 
+                                   value="{{ member.next_of_kin_phone or '' }}" required>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-4">
+                <!-- Current Photo -->
+                <div class="form-section">
+                    <h5 class="form-section-title">
+                        <i class="fas fa-camera"></i>
+                        Passport Photo
+                    </h5>
+                    {% if member.passport_photo %}
+                        <div class="text-center mb-3">
+                            <img src="{{ url_for('static', filename='uploads/' + member.passport_photo) }}" 
+                                 alt="Current Photo" class="img-fluid rounded" style="max-width: 200px;">
+                            <p class="text-muted small mt-2">Current photo</p>
+                        </div>
+                    {% endif %}
+                    <div class="mb-3">
+                        <label for="passport_photo" class="form-label">Upload New Photo</label>
+                        <input type="file" class="form-control" id="passport_photo" name="passport_photo" accept="image/*">
+                        <small class="text-muted">Leave empty to keep current photo. Supported: JPG, JPEG, PNG</small>
+                    </div>
+                    <div id="photoPreview"></div>
+                </div>
+
+                <!-- Badge Status -->
+                <div class="form-section">
+                    <h5 class="form-section-title">
+                        <i class="fas fa-id-card"></i>
+                        Badge Status
+                    </h5>
+                    <div class="text-center">
+                        {% if member.badge_image %}
+                            <span class="badge bg-success mb-2"><i class="fas fa-check-circle"></i> Badge Generated</span>
+                            <br>
+                            <a href="{{ url_for('view_badge', member_id=member.id) }}" class="btn btn-sm btn-gold">
+                                <i class="fas fa-eye"></i> View Badge
+                            </a>
+                            <a href="{{ url_for('download_badge', member_id=member.id) }}" class="btn btn-sm btn-outline-primary">
+                                <i class="fas fa-download"></i> Download
+                            </a>
+                            <a href="{{ url_for('regenerate_badge', member_id=member.id) }}" class="btn btn-sm btn-outline-secondary">
+                                <i class="fas fa-sync"></i> Regenerate
+                            </a>
+                        {% else %}
+                            <span class="badge bg-warning">No Badge Generated</span>
+                            <br>
+                            <a href="{{ url_for('regenerate_badge', member_id=member.id) }}" class="btn btn-sm btn-gold mt-2">
+                                <i class="fas fa-id-card"></i> Generate Badge
+                            </a>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="text-center mt-4">
+            <button type="submit" class="btn btn-gold btn-lg">
+                <i class="fas fa-save me-2"></i>Update Member
+            </button>
+            <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary btn-lg">
+                <i class="fas fa-arrow-left me-2"></i>Cancel
+            </a>
+        </div>
+    </form>
+</div>
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Form validation
+    const form = document.getElementById('editForm');
+    form.addEventListener('submit', function(event) {
+        if (!form.checkValidity()) {
+            event.preventDefault();
+            event.stopPropagation();
+        }
+        form.classList.add('was-validated');
+    });
+
+    // Photo preview
+    const fileInput = document.getElementById('passport_photo');
+    const photoPreview = document.getElementById('photoPreview');
+    
+    fileInput.addEventListener('change', function(e) {
+        const file = this.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                photoPreview.innerHTML = `
+                    <div class="text-center">
+                        <img src="${e.target.result}" class="img-fluid rounded" style="max-width: 200px;">
+                        <p class="text-success mt-1"><i class="fas fa-check-circle"></i> New photo selected</p>
+                    </div>
+                `;
+            };
+            reader.readAsDataURL(file);
+        }
+    });
+});
+</script>
+{% endblock %}
+
+<style>
+    .form-section {
+        background: white;
+        border-radius: 15px;
+        padding: 1.5rem;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        margin-bottom: 1.5rem;
+    }
+    
+    .form-section-title {
+        color: var(--dark-blue);
+        border-bottom: 2px solid var(--gold);
+        padding-bottom: 0.5rem;
+        margin-bottom: 1rem;
+        display: flex;
+        align-items: center;
+    }
+    
+    .form-section-title i {
+        color: var(--gold);
+        margin-right: 10px;
+    }
+    
+    .text-gold {
+        color: var(--gold);
+    }
+    
+    .btn-gold {
+        background-color: var(--gold);
+        color: white;
+    }
+    
+    .btn-gold:hover {
+        background-color: #c9a84a;
+        color: white;
+    }
+</style>
+{% endblock %}

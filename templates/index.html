@@ -1,0 +1,220 @@
+{% extends "base.html" %}
+
+{% block title %}Home - Bodaboda SACCO Registration{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+    <!-- Hero Section -->
+    <div class="row align-items-center mb-5">
+        <div class="col-lg-8 mx-auto text-center">
+            <div class="hero-section">
+                <h1 class="display-4 fw-bold text-white mb-4">
+                    <i class="fas fa-motorcycle text-gold"></i>
+                    Welcome to {{ config.GROUP_NAME }}
+                </h1>
+                <p class="lead text-white-50 mb-4">
+                    Professional Member Registration & Badge Management System
+                </p>
+                <div class="d-grid gap-3 d-sm-flex justify-content-sm-center">
+                    <a href="{{ url_for('register') }}" class="btn btn-gold btn-lg px-4">
+                        <i class="fas fa-user-plus me-2"></i>Register Member
+                    </a>
+                    <a href="{{ url_for('dashboard') }}" class="btn btn-outline-light btn-lg px-4">
+                        <i class="fas fa-tachometer-alt me-2"></i>Dashboard
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stats Section -->
+    <div class="row g-4 mb-5">
+        <div class="col-md-3">
+            <div class="stats-card">
+                <div class="stats-icon">
+                    <i class="fas fa-users"></i>
+                </div>
+                <h3 class="stats-number">{{ total_members }}</h3>
+                <p class="stats-label">Total Members</p>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stats-card">
+                <div class="stats-icon">
+                    <i class="fas fa-user-plus"></i>
+                </div>
+                <h3 class="stats-number">{{ recent_members|length }}</h3>
+                <p class="stats-label">Recent Registrations</p>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stats-card">
+                <div class="stats-icon">
+                    <i class="fas fa-motorcycle"></i>
+                </div>
+                <h3 class="stats-number">{{ total_bodas }}</h3>
+                <p class="stats-label">Registered Boda Bodas</p>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stats-card">
+                <div class="stats-icon">
+                    <i class="fas fa-qrcode"></i>
+                </div>
+                <h3 class="stats-number">{{ total_badges }}</h3>
+                <p class="stats-label">Badges Generated</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Members -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="fas fa-clock me-2"></i>Recent Members</h5>
+                    <a href="{{ url_for('dashboard') }}" class="btn btn-sm btn-gold">View All</a>
+                </div>
+                <div class="card-body">
+                    {% if recent_members %}
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>Member Number</th>
+                                        <th>Full Name</th>
+                                        <th>Telephone</th>
+                                        <th>Group/Stage</th>
+                                        <th>Date Registered</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for member in recent_members %}
+                                        <tr>
+                                            <td><strong>{{ member.member_number }}</strong></td>
+                                            <td>{{ member.full_name }}</td>
+                                            <td>{{ member.telephone }}</td>
+                                            <td>{{ member.group_stage_name or 'N/A' }}</td>
+                                            <td>{{ member.date_registered.strftime('%Y-%m-%d') if member.date_registered else 'N/A' }}</td>
+                                            <td>
+                                                <a href="{{ url_for('view_badge', member_id=member.id) }}" 
+                                                   class="btn btn-sm btn-outline-gold" title="View Badge">
+                                                    <i class="fas fa-id-card"></i>
+                                                </a>
+                                                <a href="{{ url_for('edit_member', member_id=member.id) }}" 
+                                                   class="btn btn-sm btn-outline-primary" title="Edit">
+                                                    <i class="fas fa-edit"></i>
+                                                </a>
+                                            </td>
+                                        </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    {% else %}
+                        <p class="text-center text-muted my-3">No members registered yet.</p>
+                        <div class="text-center">
+                            <a href="{{ url_for('register') }}" class="btn btn-gold">
+                                <i class="fas fa-user-plus me-2"></i>Register First Member
+                            </a>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Features Section -->
+    <div class="row mt-5 g-4">
+        <div class="col-md-4">
+            <div class="feature-card">
+                <div class="feature-icon">
+                    <i class="fas fa-user-plus"></i>
+                </div>
+                <h5>Easy Registration</h5>
+                <p class="text-muted">Register members quickly with our streamlined form. Capture photos using camera or upload.</p>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="feature-card">
+                <div class="feature-icon">
+                    <i class="fas fa-id-card"></i>
+                </div>
+                <h5>Professional Badges</h5>
+                <p class="text-muted">Generate high-quality ID badges with QR codes for easy verification.</p>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="feature-card">
+                <div class="feature-icon">
+                    <i class="fas fa-qrcode"></i>
+                </div>
+                <h5>QR Verification</h5>
+                <p class="text-muted">Scan QR codes to instantly verify member details and legitimacy.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .hero-section {
+        background: linear-gradient(135deg, var(--dark-blue) 0%, #1a3a5c 100%);
+        padding: 3rem 2rem;
+        border-radius: 20px;
+        border: 1px solid var(--gold);
+    }
+    
+    .stats-card {
+        background: white;
+        padding: 1.5rem;
+        border-radius: 15px;
+        text-align: center;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        transition: transform 0.3s ease;
+        height: 100%;
+    }
+    
+    .stats-card:hover {
+        transform: translateY(-5px);
+    }
+    
+    .stats-icon {
+        font-size: 2.5rem;
+        color: var(--gold);
+        margin-bottom: 0.5rem;
+    }
+    
+    .stats-number {
+        font-size: 2rem;
+        font-weight: bold;
+        color: var(--dark-blue);
+        margin: 0;
+    }
+    
+    .stats-label {
+        color: #6c757d;
+        margin: 0;
+    }
+    
+    .feature-card {
+        background: white;
+        padding: 1.5rem;
+        border-radius: 15px;
+        text-align: center;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        transition: transform 0.3s ease;
+        height: 100%;
+    }
+    
+    .feature-card:hover {
+        transform: translateY(-5px);
+    }
+    
+    .feature-icon {
+        font-size: 3rem;
+        color: var(--gold);
+        margin-bottom: 1rem;
+    }
+</style>
+{% endblock %}

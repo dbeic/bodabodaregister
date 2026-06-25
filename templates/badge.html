@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+
+{% block title %}Member Badge - Bodaboda SACCO{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="row">
+        <div class="col-12">
+            <h2>
+                <i class="fas fa-id-card text-gold"></i>
+                Member Identification Badge
+            </h2>
+            <p class="text-muted">View and download the member identification badge.</p>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-8 mx-auto">
+            <!-- Member Info -->
+            <div class="card mb-4">
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h5>Member Details</h5>
+                            <table class="table table-sm">
+                                <tr>
+                                    <td><strong>Member Number:</strong></td>
+                                    <td>{{ member.member_number }}</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Full Name:</strong></td>
+                                    <td>{{ member.full_name }}</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>National ID:</strong></td>
+                                    <td>{{ member.national_id }}</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Telephone:</strong></td>
+                                    <td>{{ member.telephone }}</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Group/Stage:</strong></td>
+                                    <td>{{ member.group_stage_name or 'N/A' }}</td>
+                                </tr>
+                            </table>
+                        </div>
+                        <div class="col-md-6">
+                            <h5>Actions</h5>
+                            <div class="d-grid gap-2">
+                                <a href="{{ url_for('download_badge', member_id=member.id) }}" 
+                                   class="btn btn-gold">
+                                    <i class="fas fa-download me-2"></i>Download Badge (PNG)
+                                </a>
+                                <a href="{{ url_for('download_pdf_badge', member_id=member.id) }}" 
+                                   class="btn btn-outline-primary">
+                                    <i class="fas fa-file-pdf me-2"></i>Download Badge (PDF)
+                                </a>
+                                <a href="#" onclick="window.print()" class="btn btn-outline-secondary">
+                                    <i class="fas fa-print me-2"></i>Print Badge
+                                </a>
+                                <a href="{{ url_for('regenerate_badge', member_id=member.id) }}" 
+                                   class="btn btn-outline-warning">
+                                    <i class="fas fa-sync me-2"></i>Regenerate Badge
+                                </a>
+                                <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary">
+                                    <i class="fas fa-arrow-left me-2"></i>Back to Dashboard
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Badge Display -->
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-id-card me-2"></i>Badge Preview</h5>
+                </div>
+                <div class="card-body text-center">
+                    {% if member.badge_image %}
+                        <img src="{{ url_for('static', filename='badges/' + member.badge_image) }}" 
+                             alt="Member Badge" 
+                             class="img-fluid badge-display"
+                             style="max-width: 100%; border: 1px solid #ddd; border-radius: 10px;">
+                        <p class="text-muted mt-2">
+                            <i class="fas fa-info-circle"></i> 
+                            Scan the QR code to verify member details
+                        </p>
+                    {% else %}
+                        <div class="alert alert-warning">
+                            <i class="fas fa-exclamation-triangle me-2"></i>
+                            No badge has been generated for this member yet.
+                        </div>
+                        <a href="{{ url_for('regenerate_badge', member_id=member.id) }}" class="btn btn-gold">
+                            <i class="fas fa-id-card me-2"></i>Generate Badge
+                        </a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .text-gold {
+        color: var(--gold);
+    }
+    
+    .btn-gold {
+        background-color: var(--gold);
+        color: white;
+    }
+    
+    .btn-gold:hover {
+        background-color: #c9a84a;
+        color: white;
+    }
+    
+    .badge-display {
+        max-height: 600px;
+        object-fit: contain;
+    }
+    
+    @media print {
+        .navbar, .footer, .card-header, .btn, .alert {
+            display: none !important;
+        }
+        .card {
+            border: none !important;
+            box-shadow: none !important;
+        }
+        .badge-display {
+            max-height: none;
+        }
+    }
+</style>
+{% endblock %}
