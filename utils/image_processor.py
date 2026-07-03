@@ -1,7 +1,7 @@
 """
-Image processing module for handling passport photos
+Image processing module for handling passport photos with print-ready quality
 """
-from PIL import Image, ImageOps
+from PIL import Image, ImageOps, ImageEnhance, ImageFilter
 import os
 import logging
 from config import Config
@@ -9,16 +9,17 @@ from config import Config
 logger = logging.getLogger(__name__)
 
 class ImageProcessor:
-    """Image processing utilities for passport photos"""
+    """Image processing utilities for passport photos and badges"""
     
     @staticmethod
-    def resize_passport_photo(input_path, output_path=None):
+    def resize_passport_photo(input_path, output_path=None, dpi=300):
         """
         Resize and crop passport photo to professional dimensions
         
         Args:
             input_path: Path to input image
             output_path: Path to save resized image (optional)
+            dpi: Target DPI for print quality
         
         Returns:
             Path to resized image
@@ -31,7 +32,7 @@ class ImageProcessor:
             if img.mode != 'RGB':
                 img = img.convert('RGB')
             
-            # Target dimensions (passport photo style)
+            # Target dimensions (passport photo style at 300 DPI)
             target_size = (300, 360)  # Width, Height
             
             # Calculate aspect ratios
@@ -52,15 +53,28 @@ class ImageProcessor:
                 bottom = top + new_height
                 img = img.crop((0, top, img.width, bottom))
             
-            # Resize to target
+            # Resize to target with high quality
             img = img.resize(target_size, Image.LANCZOS)
             
-            # Enhance image quality
+            # Enhance image quality for print
+            # Enhance contrast
+            enhancer = ImageEnhance.Contrast(img)
+            img = enhancer.enhance(1.1)
+            
+            # Enhance sharpness
+            enhancer = ImageEnhance.Sharpness(img)
+            img = enhancer.enhance(1.2)
+            
+            # Enhance color
+            enhancer = ImageEnhance.Color(img)
+            img = enhancer.enhance(1.05)
+            
+            # Auto contrast
             img = ImageOps.autocontrast(img, cutoff=2)
             
-            # Save if output path provided
+            # Save with high quality
             if output_path:
-                img.save(output_path, 'JPEG', quality=95, optimize=True)
+                img.save(output_path, 'JPEG', quality=95, optimize=True, dpi=(dpi, dpi))
                 logger.info(f"Image resized and saved to: {output_path}")
                 return output_path
             
@@ -155,8 +169,8 @@ class ImageProcessor:
             # Save original
             file.save(filepath)
             
-            # Process image
-            processed_path = ImageProcessor.resize_passport_photo(filepath)
+            # Process image with print quality
+            processed_path = ImageProcessor.resize_passport_photo(filepath, dpi=Config.BADGE_DPI)
             
             # Create thumbnail
             thumb_filename = f"{member_number}_thumb.{ext}"
@@ -167,4 +181,45 @@ class ImageProcessor:
             
         except Exception as e:
             logger.error(f"Error saving uploaded file: {e}")
+            raise
+    
+    @staticmethod
+    def prepare_for_print(image_path, output_path=None, dpi=300):
+        """
+        Prepare image for print with bleed and crop marks
+        
+        Args:
+            image_path: Path to input image
+            output_path: Path to save print-ready image (optional)
+            dpi: Target DPI
+        
+        Returns:
+            Path to print-ready image
+        """
+        try:
+            img = Image.open(image_path)
+            
+            # Convert to CMYK for print
+            if img.mode != 'CMYK':
+                img = img.convert('CMYK')
+            
+            # Add bleed area
+            bleed = 36  # 0.125 inches at 300 DPI
+            width, height = img.size
+            new_width = width + (bleed * 2)
+            new_height = height + (bleed * 2)
+            
+            # Create new image with bleed
+            new_img = Image.new('CMYK', (new_width, new_height), (0, 0, 0, 0))
+            new_img.paste(img, (bleed, bleed))
+            
+            # Save with print settings
+            if output_path:
+                new_img.save(output_path, 'TIFF', dpi=(dpi, dpi), compression=None)
+                return output_path
+            
+            return new_img
+            
+        except Exception as e:
+            logger.error(f"Error preparing image for print: {e}")
             raise

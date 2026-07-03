@@ -5,6 +5,7 @@
     --gold: #d4af37;
     --gold-light: #f0d78c;
     --white: #ffffff;
+    --bleed-color: #ff0000;
 }
 
 /* Global Styles */
@@ -237,7 +238,26 @@ main {
     padding-left: 1rem;
 }
 
-/* Print Styles */
+/* Bleed indicator for print */
+.bleed-indicator {
+    border: 2px dashed var(--bleed-color);
+    padding: 2px;
+    position: relative;
+}
+
+.bleed-indicator::after {
+    content: 'BLEED AREA';
+    position: absolute;
+    top: -10px;
+    right: 10px;
+    background: var(--bleed-color);
+    color: white;
+    font-size: 10px;
+    padding: 0 5px;
+    border-radius: 3px;
+}
+
+/* Print Styles - Enhanced */
 @media print {
     .no-print {
         display: none !important;
@@ -246,9 +266,95 @@ main {
     .card {
         box-shadow: none !important;
         border: 1px solid #ddd !important;
+        break-inside: avoid;
+        page-break-inside: avoid;
     }
     
     body {
         background: white !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+        color-adjust: exact !important;
     }
+    
+    .badge-display {
+        max-width: 100%;
+        height: auto;
+    }
+    
+    .container {
+        max-width: 100% !important;
+        padding: 0 !important;
+    }
+    
+    .card-header {
+        background: #1a3a5c !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+    }
+    
+    .card-header h5 {
+        color: #d4af37 !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+    }
+}
+
+/* Batch issuance styles */
+.batch-progress {
+    background: #f8f9fa;
+    border-radius: 10px;
+    padding: 20px;
+}
+
+.progress-bar-gold {
+    background: linear-gradient(90deg, #d4af37, #c9a84a);
+}
+
+/* Filter badges */
+.filter-badge {
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.filter-badge:hover {
+    transform: scale(1.05);
+}
+
+.filter-badge.active {
+    background-color: var(--gold);
+    color: white;
+}
+
+/* Export buttons */
+.export-btn-group .btn {
+    margin: 2px;
+}
+
+/* Issuance status indicators */
+.status-issued {
+    color: #28a745;
+}
+
+.status-pending {
+    color: #ffc107;
+}
+
+/* Print quality selector */
+.quality-option {
+    padding: 10px;
+    border: 2px solid #dee2e6;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.quality-option:hover {
+    border-color: var(--gold);
+    background: rgba(212, 175, 55, 0.05);
+}
+
+.quality-option.selected {
+    border-color: var(--gold);
+    background: rgba(212, 175, 55, 0.1);
 }

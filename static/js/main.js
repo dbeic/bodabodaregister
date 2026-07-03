@@ -1,5 +1,6 @@
 /**
  * Main JavaScript for Bodaboda SACCO Registration System
+ * Enhanced with batch processing and print functionality
  */
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -33,6 +34,24 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     });
+
+    // Batch issuance form handling
+    const batchForm = document.getElementById('batchForm');
+    if (batchForm) {
+        batchForm.addEventListener('submit', function(e) {
+            const selectedFormat = document.querySelector('input[name="format_type"]:checked');
+            if (!selectedFormat) {
+                e.preventDefault();
+                showToast('Please select a print format.', 'warning');
+                return;
+            }
+            
+            const confirmMsg = `This will generate badges for all unissued members (${document.querySelector('.unissued-count')?.textContent || 'unknown'}). Continue?`;
+            if (!confirm(confirmMsg)) {
+                e.preventDefault();
+            }
+        });
+    }
 
     // Form validation helper
     function validateForm(form) {
@@ -123,20 +142,50 @@ document.addEventListener('DOMContentLoaded', function() {
         return new bootstrap.Popover(popoverTriggerEl);
     });
 
-    // Print badge functionality
+    // Print badge functionality with options
     document.querySelectorAll('.print-badge').forEach(function(btn) {
         btn.addEventListener('click', function() {
+            const quality = this.getAttribute('data-quality') || 'standard';
+            if (quality === 'high') {
+                // Add bleed indicator for print
+                const badgeContainer = document.querySelector('.badge-display')?.closest('.card-body');
+                if (badgeContainer) {
+                    badgeContainer.classList.add('bleed-indicator');
+                    setTimeout(() => {
+                        badgeContainer.classList.remove('bleed-indicator');
+                    }, 1000);
+                }
+            }
             window.print();
         });
     });
 
-    // Download badge functionality
+    // Download badge with options
     document.querySelectorAll('.download-badge').forEach(function(btn) {
         btn.addEventListener('click', function(e) {
             e.preventDefault();
             const url = this.getAttribute('href');
+            const format = this.getAttribute('data-format') || 'png';
+            const bleed = this.getAttribute('data-bleed') || 'false';
+            
             if (url) {
-                window.location.href = url;
+                const downloadUrl = `${url}?format=${format}&bleed=${bleed}`;
+                window.location.href = downloadUrl;
+                showToast(`Downloading ${format.toUpperCase()} badge...`, 'info');
+            }
+        });
+    });
+
+    // Quality selector for batch issuance
+    document.querySelectorAll('.quality-option').forEach(function(el) {
+        el.addEventListener('click', function() {
+            document.querySelectorAll('.quality-option').forEach(function(opt) {
+                opt.classList.remove('selected');
+            });
+            this.classList.add('selected');
+            const qualityInput = document.getElementById('print_quality');
+            if (qualityInput) {
+                qualityInput.value = this.getAttribute('data-value');
             }
         });
     });
@@ -158,9 +207,52 @@ document.addEventListener('DOMContentLoaded', function() {
             window.location.href = '/';
             e.preventDefault();
         }
+        // Ctrl+Shift+B: Go to batch issuance
+        if (e.ctrlKey && e.shiftKey && e.key === 'B') {
+            window.location.href = '/badge/batch';
+            e.preventDefault();
+        }
+        // Ctrl+P: Print current page
+        if (e.ctrlKey && e.key === 'p') {
+            // Allow default print behavior
+            return true;
+        }
+    });
+
+    // Batch progress simulation
+    const batchProgressBtn = document.getElementById('startBatch');
+    if (batchProgressBtn) {
+        batchProgressBtn.addEventListener('click', function() {
+            const progressBar = document.getElementById('batchProgress');
+            if (progressBar) {
+                let progress = 0;
+                const interval = setInterval(function() {
+                    progress += Math.random() * 10;
+                    if (progress >= 100) {
+                        progress = 100;
+                        clearInterval(interval);
+                        showToast('Batch processing complete!', 'success');
+                    }
+                    progressBar.style.width = progress + '%';
+                    progressBar.textContent = Math.round(progress) + '%';
+                    progressBar.setAttribute('aria-valuenow', progress);
+                }, 500);
+            }
+        });
+    }
+
+    // Filter buttons for dashboard
+    document.querySelectorAll('.filter-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            const filter = this.getAttribute('data-filter');
+            const currentUrl = new URL(window.location.href);
+            currentUrl.searchParams.set('filter', filter);
+            window.location.href = currentUrl.toString();
+        });
     });
 
     console.log('Bodaboda SACCO Registration System loaded successfully!');
+    console.log('Features: Badge Generation, QR Codes, Batch Issuance, Print Ready');
 });
 
 // Utility function for making AJAX requests
@@ -235,5 +327,31 @@ function showToast(message, type = 'info', duration = 3000) {
     
     toast.addEventListener('hidden.bs.toast', function() {
         toast.remove();
+    });
+}
+
+// Utility function for batch badge issuance
+function issueBatchBadges(memberIds, options = {}) {
+    const format = options.format || 'pdf';
+    const quality = options.quality || 'high';
+    const bleed = options.bleed || true;
+    
+    return makeRequest('/badge/batch', 'POST', {
+        member_ids: memberIds,
+        format: format,
+        quality: quality,
+        bleed: bleed
+    });
+}
+
+// Utility function to get badge status
+function getBadgeStatus(memberId) {
+    return makeRequest(`/badge/status/${memberId}`);
+}
+
+// Utility function to issue single badge
+function issueBadge(memberId, issuedBy = 'system') {
+    return makeRequest(`/badge/issue/${memberId}`, 'POST', {
+        issued_by: issuedBy
     });
 }

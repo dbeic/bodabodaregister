@@ -10,7 +10,7 @@
                 <i class="fas fa-id-card text-gold"></i>
                 Member Identification Badge
             </h2>
-            <p class="text-muted">View and download the member identification badge.</p>
+            <p class="text-muted">View, download, and print the member identification badge.</p>
         </div>
     </div>
 
@@ -43,34 +43,106 @@
                                     <td><strong>Group/Stage:</strong></td>
                                     <td>{{ member.group_stage_name or 'N/A' }}</td>
                                 </tr>
+                                <tr>
+                                    <td><strong>Motorcycle:</strong></td>
+                                    <td>{{ member.motorcycle_registration or 'N/A' }}</td>
+                                </tr>
                             </table>
                         </div>
                         <div class="col-md-6">
+                            <h5>Badge Status</h5>
+                            <table class="table table-sm">
+                                <tr>
+                                    <td><strong>Status:</strong></td>
+                                    <td>
+                                        {% if member.badge_issued %}
+                                            <span class="badge bg-success">Issued</span>
+                                        {% else %}
+                                            <span class="badge bg-warning">Pending</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Issued Date:</strong></td>
+                                    <td>{{ member.badge_issued_date|datetime if member.badge_issued_date else 'Not issued' }}</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Print Count:</strong></td>
+                                    <td>{{ member.badge_print_count or 0 }}</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Last Printed:</strong></td>
+                                    <td>{{ member.last_printed|datetime if member.last_printed else 'Never' }}</td>
+                                </tr>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="row mt-3">
+                        <div class="col-12">
                             <h5>Actions</h5>
-                            <div class="d-grid gap-2">
+                            <div class="d-flex flex-wrap gap-2">
                                 <a href="{{ url_for('download_badge', member_id=member.id) }}" 
                                    class="btn btn-gold">
-                                    <i class="fas fa-download me-2"></i>Download Badge (PNG)
+                                    <i class="fas fa-download me-2"></i>Download PNG
                                 </a>
-                                <a href="{{ url_for('download_pdf_badge', member_id=member.id) }}" 
+                                <a href="{{ url_for('download_badge', member_id=member.id, format='pdf') }}" 
                                    class="btn btn-outline-primary">
-                                    <i class="fas fa-file-pdf me-2"></i>Download Badge (PDF)
+                                    <i class="fas fa-file-pdf me-2"></i>Download PDF
+                                </a>
+                                <a href="{{ url_for('download_badge', member_id=member.id, bleed='true') }}" 
+                                   class="btn btn-outline-success">
+                                    <i class="fas fa-cut me-2"></i>With Bleed
                                 </a>
                                 <a href="#" onclick="window.print()" class="btn btn-outline-secondary">
-                                    <i class="fas fa-print me-2"></i>Print Badge
+                                    <i class="fas fa-print me-2"></i>Print
                                 </a>
                                 <a href="{{ url_for('regenerate_badge', member_id=member.id) }}" 
                                    class="btn btn-outline-warning">
-                                    <i class="fas fa-sync me-2"></i>Regenerate Badge
+                                    <i class="fas fa-sync me-2"></i>Regenerate
                                 </a>
                                 <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary">
-                                    <i class="fas fa-arrow-left me-2"></i>Back to Dashboard
+                                    <i class="fas fa-arrow-left me-2"></i>Back
                                 </a>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
+
+            <!-- Issuance Log -->
+            {% if issuance_log %}
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-history me-2"></i>Issuance History</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Issued By</th>
+                                    <th>Format</th>
+                                    <th>Quality</th>
+                                    <th>Notes</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for log in issuance_log %}
+                                <tr>
+                                    <td>{{ log.issued_date|datetime }}</td>
+                                    <td>{{ log.issued_by or 'N/A' }}</td>
+                                    <td>{{ log.print_format or 'N/A' }}</td>
+                                    <td>{{ log.print_quality or 'N/A' }}</td>
+                                    <td>{{ log.notes or '' }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
 
             <!-- Badge Display -->
             <div class="card">
@@ -87,6 +159,15 @@
                             <i class="fas fa-info-circle"></i> 
                             Scan the QR code to verify member details
                         </p>
+                        <div class="btn-group mt-2" role="group">
+                            <a href="{{ url_for('static', filename='badges/' + member.badge_image) }}" 
+                               target="_blank" class="btn btn-sm btn-outline-primary">
+                                <i class="fas fa-eye"></i> View Full
+                            </a>
+                            <button onclick="window.print()" class="btn btn-sm btn-outline-secondary">
+                                <i class="fas fa-print"></i> Print
+                            </button>
+                        </div>
                     {% else %}
                         <div class="alert alert-warning">
                             <i class="fas fa-exclamation-triangle me-2"></i>
@@ -132,6 +213,9 @@
         }
         .badge-display {
             max-height: none;
+        }
+        .table-responsive {
+            display: none !important;
         }
     }
 </style>

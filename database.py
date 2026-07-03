@@ -2,9 +2,8 @@
 Database connection and operations module
 """
 import os
-import psycopg2
-from psycopg2 import pool, sql, extras
-from psycopg2.extras import RealDictCursor
+import psycopg
+from psycopg import sql
 import logging
 from contextlib import contextmanager
 from config import Config
@@ -14,10 +13,10 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class Database:
-    """Database connection manager with connection pooling"""
+    """Database connection manager"""
     
     _instance = None
-    _pool = None
+    _conn = None
     
     def __new__(cls):
         if cls._instance is None:
@@ -25,63 +24,51 @@ class Database:
         return cls._instance
     
     def __init__(self):
-        if self._pool is None:
-            self._initialize_pool()
+        self._conn = None
     
-    def _initialize_pool(self):
-        """Initialize connection pool"""
-        try:
-            self._pool = pool.SimpleConnectionPool(
-                minconn=1,
-                maxconn=10,
-                dsn=Config.DATABASE_URL,
-                sslmode='require'
-            )
-            logger.info("Database connection pool initialized successfully")
-        except Exception as e:
-            logger.error(f"Failed to initialize database pool: {e}")
-            raise
+    def get_connection(self):
+        """Get a database connection"""
+        if self._conn is None or self._conn.closed:
+            try:
+                self._conn = psycopg.connect(Config.DATABASE_URL)
+                logger.info("Database connection established")
+            except Exception as e:
+                logger.error(f"Failed to connect to database: {e}")
+                raise
+        return self._conn
     
     @contextmanager
-    def get_connection(self):
-        """Get a connection from the pool"""
-        conn = None
+    def get_cursor(self):
+        """Get a cursor from a connection"""
+        conn = self.get_connection()
+        cur = conn.cursor()
         try:
-            conn = self._pool.getconn()
-            yield conn
+            yield cur
+            conn.commit()
         except Exception as e:
-            logger.error(f"Database error: {e}")
+            conn.rollback()
+            logger.error(f"Database operation error: {e}")
             raise
         finally:
-            if conn:
-                self._pool.putconn(conn)
-    
-    @contextmanager
-    def get_cursor(self, cursor_factory=None):
-        """Get a cursor from a connection"""
-        with self.get_connection() as conn:
-            if cursor_factory:
-                cur = conn.cursor(cursor_factory=cursor_factory)
-            else:
-                cur = conn.cursor()
-            try:
-                yield cur
-                conn.commit()
-            except Exception as e:
-                conn.rollback()
-                logger.error(f"Database operation error: {e}")
-                raise
-            finally:
-                cur.close()
+            cur.close()
     
     def execute_query(self, query, params=None, fetch_one=False, fetch_all=False):
         """Execute a query and return results"""
-        with self.get_cursor(cursor_factory=RealDictCursor) as cur:
+        with self.get_cursor() as cur:
             cur.execute(query, params or ())
             if fetch_one:
-                return cur.fetchone()
+                result = cur.fetchone()
+                if result:
+                    # Get column names
+                    columns = [desc[0] for desc in cur.description]
+                    return dict(zip(columns, result))
+                return None
             elif fetch_all:
-                return cur.fetchall()
+                results = cur.fetchall()
+                if results:
+                    columns = [desc[0] for desc in cur.description]
+                    return [dict(zip(columns, row)) for row in results]
+                return []
             else:
                 return cur.rowcount
 
@@ -89,10 +76,10 @@ class Database:
 db = Database()
 
 def init_database():
-    """Initialize database tables"""
+    """Initialize database tables with issuance tracking"""
     logger.info("Initializing database tables...")
     
-    # SQL to create members table
+    # SQL to create members table with issuance tracking
     create_table_sql = """
     CREATE TABLE IF NOT EXISTS members (
         id SERIAL PRIMARY KEY,
@@ -110,6 +97,12 @@ def init_database():
         date_registered DATE DEFAULT CURRENT_DATE,
         qr_code_data TEXT,
         badge_image VARCHAR(500),
+        badge_issued BOOLEAN DEFAULT FALSE,
+        badge_issued_date TIMESTAMP,
+        badge_issued_by VARCHAR(100),
+        badge_print_count INTEGER DEFAULT 0,
+        last_printed TIMESTAMP,
+        card_type VARCHAR(50) DEFAULT 'standard',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
@@ -119,14 +112,24 @@ def init_database():
     CREATE INDEX IF NOT EXISTS idx_telephone ON members(telephone);
     CREATE INDEX IF NOT EXISTS idx_full_name ON members(full_name);
     CREATE INDEX IF NOT EXISTS idx_group_stage ON members(group_stage_name);
+    CREATE INDEX IF NOT EXISTS idx_badge_issued ON members(badge_issued);
+    
+    -- Create issuance log table
+    CREATE TABLE IF NOT EXISTS badge_issuance_log (
+        id SERIAL PRIMARY KEY,
+        member_id INTEGER REFERENCES members(id),
+        issued_by VARCHAR(100),
+        issued_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        print_format VARCHAR(20),
+        print_quality VARCHAR(20),
+        notes TEXT
+    );
     """
     
     try:
-        with db.get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(create_table_sql)
-                conn.commit()
-                logger.info("Database tables created successfully")
+        with db.get_cursor() as cur:
+            cur.execute(create_table_sql)
+            logger.info("Database tables created successfully")
     except Exception as e:
         logger.error(f"Error creating tables: {e}")
         raise
@@ -139,18 +142,38 @@ def create_member(data):
         passport_photo, group_stage_name, chairman_name,
         chairman_phone, motorcycle_registration,
         next_of_kin_name, next_of_kin_phone,
-        date_registered, qr_code_data, badge_image
+        date_registered, qr_code_data, badge_image,
+        badge_issued, badge_issued_date, badge_issued_by
     ) VALUES (
-        %(member_number)s, %(full_name)s, %(national_id)s, %(telephone)s,
-        %(passport_photo)s, %(group_stage_name)s, %(chairman_name)s,
-        %(chairman_phone)s, %(motorcycle_registration)s,
-        %(next_of_kin_name)s, %(next_of_kin_phone)s,
-        %(date_registered)s, %(qr_code_data)s, %(badge_image)s
+        %s, %s, %s, %s,
+        %s, %s, %s,
+        %s, %s,
+        %s, %s,
+        %s, %s, %s,
+        %s, %s, %s
     ) RETURNING id;
     """
-    with db.get_cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute(query, data)
-        return cur.fetchone()['id']
+    with db.get_cursor() as cur:
+        cur.execute(query, (
+            data['member_number'],
+            data['full_name'],
+            data['national_id'],
+            data['telephone'],
+            data.get('passport_photo'),
+            data.get('group_stage_name'),
+            data.get('chairman_name'),
+            data.get('chairman_phone'),
+            data.get('motorcycle_registration'),
+            data.get('next_of_kin_name'),
+            data.get('next_of_kin_phone'),
+            data.get('date_registered'),
+            data.get('qr_code_data'),
+            data.get('badge_image'),
+            data.get('badge_issued', False),
+            data.get('badge_issued_date'),
+            data.get('badge_issued_by')
+        ))
+        return cur.fetchone()[0]
 
 def get_member(member_id):
     """Get a member by ID"""
@@ -218,9 +241,10 @@ def update_member(member_id, data):
     RETURNING id
     """
     
-    with db.get_cursor(cursor_factory=RealDictCursor) as cur:
+    with db.get_cursor() as cur:
         cur.execute(query, tuple(values))
-        return cur.fetchone()
+        result = cur.fetchone()
+        return result[0] if result else None
 
 def delete_member(member_id):
     """Delete a member"""
@@ -237,6 +261,40 @@ def search_members_by_qr(qr_data):
     """Search members by QR code data"""
     query = "SELECT * FROM members WHERE qr_code_data = %s"
     return db.execute_query(query, (qr_data,), fetch_one=True)
+
+def log_badge_issuance(member_id, issued_by, print_format, print_quality, notes=None):
+    """Log badge issuance"""
+    query = """
+    INSERT INTO badge_issuance_log (member_id, issued_by, print_format, print_quality, notes)
+    VALUES (%s, %s, %s, %s, %s)
+    """
+    with db.get_cursor() as cur:
+        cur.execute(query, (member_id, issued_by, print_format, print_quality, notes))
+        return cur.rowcount > 0
+
+def get_issuance_log(member_id, limit=10):
+    """Get issuance log for a member"""
+    query = """
+    SELECT * FROM badge_issuance_log 
+    WHERE member_id = %s 
+    ORDER BY issued_date DESC 
+    LIMIT %s
+    """
+    return db.execute_query(query, (member_id, limit), fetch_all=True)
+
+def get_unissued_members(limit=None):
+    """Get members who haven't been issued badges"""
+    query = "SELECT * FROM members WHERE badge_issued = FALSE ORDER BY created_at ASC"
+    if limit:
+        query += f" LIMIT {limit}"
+    return db.execute_query(query, fetch_all=True)
+
+def get_issued_members(limit=None):
+    """Get members who have been issued badges"""
+    query = "SELECT * FROM members WHERE badge_issued = TRUE ORDER BY badge_issued_date DESC"
+    if limit:
+        query += f" LIMIT {limit}"
+    return db.execute_query(query, fetch_all=True)
 
 # Initialize database on module import
 init_database()
