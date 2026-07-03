@@ -45,6 +45,7 @@ Config.ensure_directories()
 # CSRF Protection
 csrf = CSRFProtect(app)
 
+app.jinja_env.globals['csrf_token'] = lambda: csrf._get_csrf_token()
 # Initialize Bcrypt for password hashing
 bcrypt = Bcrypt(app)
 
@@ -100,7 +101,7 @@ class Admin(UserMixin):
         self.role = admin_data.get('role', 'admin')
         self.full_name = admin_data.get('full_name', '')
         self.email = admin_data.get('email', '')
-        self.is_active = admin_data.get('is_active', True)
+        self.active = admin_data.get('is_active', True)
     
     def has_role(self, role):
         return self.role == role or self.role == 'super_admin'
