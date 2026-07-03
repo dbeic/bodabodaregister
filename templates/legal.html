@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+
+{% block title %}Legal Documents - {{ config.GROUP_NAME }}{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="row">
+        <div class="col-12">
+            <h1 class="text-center mb-4">
+                <i class="fas fa-gavel text-gold"></i>
+                Legal Documents
+            </h1>
+            <p class="text-center text-muted">
+                Busia County Bodaboda SACCO Badge Management System
+            </p>
+            <hr class="my-4">
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <!-- Terms of Service -->
+        <div class="col-md-6 col-lg-4">
+            <div class="card h-100 shadow-sm">
+                <div class="card-body text-center">
+                    <i class="fas fa-file-contract fa-3x text-gold mb-3"></i>
+                    <h5 class="card-title">Terms of Service</h5>
+                    <p class="card-text text-muted small">
+                        Terms and conditions for using the System.
+                    </p>
+                    <a href="{{ url_for('legal_terms') }}" class="btn btn-gold btn-sm" target="_blank">
+                        <i class="fas fa-external-link-alt me-1"></i> View
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Privacy Policy -->
+        <div class="col-md-6 col-lg-4">
+            <div class="card h-100 shadow-sm">
+                <div class="card-body text-center">
+                    <i class="fas fa-user-shield fa-3x text-gold mb-3"></i>
+                    <h5 class="card-title">Privacy Policy</h5>
+                    <p class="card-text text-muted small">
+                        How we collect, use, and protect your data.
+                    </p>
+                    <a href="{{ url_for('legal_privacy') }}" class="btn btn-gold btn-sm" target="_blank">
+                        <i class="fas fa-external-link-alt me-1"></i> View
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- EULA -->
+        <div class="col-md-6 col-lg-4">
+            <div class="card h-100 shadow-sm">
+                <div class="card-body text-center">
+                    <i class="fas fa-handshake fa-3x text-gold mb-3"></i>
+                    <h5 class="card-title">End User License Agreement</h5>
+                    <p class="card-text text-muted small">
+                        License terms for using the Software.
+                    </p>
+                    <a href="{{ url_for('legal_eula') }}" class="btn btn-gold btn-sm" target="_blank">
+                        <i class="fas fa-external-link-alt me-1"></i> View
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- User Manual -->
+        <div class="col-md-6 col-lg-4">
+            <div class="card h-100 shadow-sm">
+                <div class="card-body text-center">
+                    <i class="fas fa-book fa-3x text-gold mb-3"></i>
+                    <h5 class="card-title">User Manual</h5>
+                    <p class="card-text text-muted small">
+                        Complete guide for System users.
+                    </p>
+                    <a href="{{ url_for('legal_user_manual') }}" class="btn btn-gold btn-sm" target="_blank">
+                        <i class="fas fa-external-link-alt me-1"></i> View
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Admin Guide -->
+        <div class="col-md-6 col-lg-4">
+            <div class="card h-100 shadow-sm">
+                <div class="card-body text-center">
+                    <i class="fas fa-user-cog fa-3x text-gold mb-3"></i>
+                    <h5 class="card-title">Admin Guide</h5>
+                    <p class="card-text text-muted small">
+                        System administration and configuration.
+                    </p>
+                    <a href="{{ url_for('legal_admin_guide') }}" class="btn btn-gold btn-sm" target="_blank">
+                        <i class="fas fa-external-link-alt me-1"></i> View
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Acceptable Use -->
+        <div class="col-md-6 col-lg-4">
+            <div class="card h-100 shadow-sm">
+                <div class="card-body text-center">
+                    <i class="fas fa-ban fa-3x text-gold mb-3"></i>
+                    <h5 class="card-title">Acceptable Use Policy</h5>
+                    <p class="card-text text-muted small">
+                        Guidelines for proper System usage.
+                    </p>
+                    <a href="{{ url_for('legal_acceptable_use') }}" class="btn btn-gold btn-sm" target="_blank">
+                        <i class="fas fa-external-link-alt me-1"></i> View
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Consent Form -->
+        <div class="col-md-6 col-lg-4">
+            <div class="card h-100 shadow-sm">
+                <div class="card-body text-center">
+                    <i class="fas fa-pen fa-3x text-gold mb-3"></i>
+                    <h5 class="card-title">Consent Form</h5>
+                    <p class="card-text text-muted small">
+                        Member registration consent.
+                    </p>
+                    <a href="{{ url_for('legal_consent') }}" class="btn btn-gold btn-sm" target="_blank">
+                        <i class="fas fa-external-link-alt me-1"></i> View
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mt-5">
+        <div class="col-12">
+            <div class="card bg-light">
+                <div class="card-body">
+                    <h5 class="text-center">Contact Information</h5>
+                    <div class="row text-center">
+                        <div class="col-md-4">
+                            <i class="fas fa-user-tie text-gold"></i><br>
+                            <strong>Chairman:</strong> Bonface Nyongesa Okumu<br>
+                            <small>0758488841</small>
+                        </div>
+                        <div class="col-md-4">
+                            <i class="fas fa-user-secret text-gold"></i><br>
+                            <strong>Secretary General:</strong> Peter Juma Olero<br>
+                            <small>0722178959</small>
+                        </div>
+                        <div class="col-md-4">
+                            <i class="fas fa-laptop-code text-gold"></i><br>
+                            <strong>Developer:</strong> James Boyid Ochuna<br>
+                            <small>0701207062</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mt-4">
+        <div class="col-12 text-center text-muted small">
+            <p>Version 1.0 | Effective July 2026 | Busia County, Kenya</p>
+            <p>© 2026 Busia County Bodaboda SACCO. All rights reserved.</p>
+        </div>
+    </div>
+</div>
+
+<style>
+    .text-gold {
+        color: #d4af37;
+    }
+    .btn-gold {
+        background-color: #d4af37;
+        color: white;
+    }
+    .btn-gold:hover {
+        background-color: #c9a84a;
+        color: white;
+    }
+    .card {
+        transition: transform 0.3s ease;
+    }
+    .card:hover {
+        transform: translateY(-5px);
+    }
+</style>
+{% endblock %}

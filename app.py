@@ -9,11 +9,12 @@ import tempfile
 from datetime import datetime
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_file, send_from_directory
 from werkzeug.utils import secure_filename
-from flask_wtf.csrf import CSRFProtect
 from flask_wtf import FlaskForm
 from wtforms import StringField, FileField, HiddenField, SelectField, BooleanField
 from wtforms.validators import DataRequired, Length, Regexp
-
+from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
+from flask_bcrypt import Bcrypt
+from flask_wtf.csrf import CSRFProtect
 from config import config, Config
 from database import (
     db, create_member, get_member, get_member_by_number,
@@ -21,7 +22,10 @@ from database import (
     get_all_members, get_members_count, update_member,
     delete_member, get_recent_members, search_members_by_qr,
     get_unissued_members, get_issued_members, log_badge_issuance,
-    get_issuance_log
+    get_issuance_log,
+    get_admin_by_id, get_admin_by_username, get_admin_by_email,
+    create_admin, update_admin_password, log_admin_login,
+    update_last_login, admin_exists
 )
 from utils.qr_generator import QRGenerator
 from utils.image_processor import ImageProcessor
@@ -40,6 +44,16 @@ Config.ensure_directories()
 
 # CSRF Protection
 csrf = CSRFProtect(app)
+
+# Initialize Bcrypt for password hashing
+bcrypt = Bcrypt(app)
+
+# Initialize Login Manager
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'login'
+login_manager.login_message = 'Please login to access this page.'
+login_manager.login_message_category = 'warning'
 
 # Custom Jinja2 filter for datetime
 @app.template_filter('datetime')
@@ -64,15 +78,45 @@ def inject_config():
         'config': {
             'GROUP_NAME': Config.GROUP_NAME,
             'APP_NAME': Config.APP_NAME
-        }
+        },
+        'current_user': current_user,
+        'legal_links': [
+            {'name': 'Terms of Service', 'url': url_for('legal_terms')},
+            {'name': 'Privacy Policy', 'url': url_for('legal_privacy')},
+            {'name': 'EULA', 'url': url_for('legal_eula')},
+            {'name': 'User Manual', 'url': url_for('legal_user_manual')},
+            {'name': 'Admin Guide', 'url': url_for('legal_admin_guide')},
+        ]
     }
+
+# ----------------------------
+# User Class for Flask-Login
+# ----------------------------
+
+class Admin(UserMixin):
+    def __init__(self, admin_data):
+        self.id = admin_data['id']
+        self.username = admin_data['username']
+        self.role = admin_data.get('role', 'admin')
+        self.full_name = admin_data.get('full_name', '')
+        self.email = admin_data.get('email', '')
+        self.is_active = admin_data.get('is_active', True)
+    
+    def has_role(self, role):
+        return self.role == role or self.role == 'super_admin'
+
+@login_manager.user_loader
+def load_user(user_id):
+    admin = get_admin_by_id(int(user_id))
+    if admin:
+        return Admin(admin)
+    return None
 
 # ----------------------------
 # Forms
 # ----------------------------
 
 class MemberRegistrationForm(FlaskForm):
-    """Member registration form"""
     member_number = StringField('Member Number', validators=[DataRequired()])
     full_name = StringField('Full Name', validators=[DataRequired(), Length(min=2, max=200)])
     national_id = StringField('National ID', validators=[DataRequired(), Length(min=5, max=20)])
@@ -87,33 +131,77 @@ class MemberRegistrationForm(FlaskForm):
     date_registered = HiddenField('Date Registered')
 
 class QRVerificationForm(FlaskForm):
-    """QR code verification form"""
     qr_data = StringField('QR Data', validators=[DataRequired()])
 
 class BatchIssuanceForm(FlaskForm):
-    """Batch badge issuance form"""
     format_type = SelectField('Print Format', choices=[('png', 'PNG'), ('pdf', 'PDF'), ('both', 'Both')])
     include_bleed = BooleanField('Include Bleed Area (for professional printing)')
     print_quality = SelectField('Print Quality', choices=[('draft', 'Draft'), ('standard', 'Standard'), ('high', 'High')])
 
+class LoginForm(FlaskForm):
+    username = StringField('Username', validators=[DataRequired()])
+    password = StringField('Password', validators=[DataRequired()])
+
 # ----------------------------
-# Routes
+# Authentication Routes
+# ----------------------------
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if current_user.is_authenticated:
+        return redirect(url_for('dashboard'))
+    
+    form = LoginForm()
+    
+    if request.method == 'POST' and form.validate_on_submit():
+        username = form.username.data.strip()
+        password = form.password.data
+        
+        admin = get_admin_by_username(username)
+        
+        if admin and bcrypt.check_password_hash(admin['password_hash'], password):
+            if admin.get('is_active', True):
+                user = Admin(admin)
+                login_user(user)
+                update_last_login(admin['id'])
+                log_admin_login(admin['id'], request.remote_addr, request.user_agent.string, True)
+                flash(f'Welcome back, {admin.get("full_name", username)}!', 'success')
+                
+                next_page = request.args.get('next')
+                if next_page:
+                    return redirect(next_page)
+                return redirect(url_for('dashboard'))
+            else:
+                flash('Your account has been deactivated. Please contact the administrator.', 'danger')
+        else:
+            if admin:
+                log_admin_login(admin['id'], request.remote_addr, request.user_agent.string, False)
+            flash('Invalid username or password.', 'danger')
+    
+    return render_template('login.html', form=form)
+
+@app.route('/logout')
+@login_required
+def logout():
+    logout_user()
+    flash('You have been logged out successfully.', 'info')
+    return redirect(url_for('login'))
+
+# ----------------------------
+# Public Routes
 # ----------------------------
 
 @app.route('/')
 def index():
-    """Home page"""
     try:
         total_members = get_members_count()
         recent_members = get_recent_members(5)
-        
-        # Calculate additional stats
         members = get_all_members(limit=1000)
         total_bodas = len([m for m in members if m.get('motorcycle_registration')])
         total_badges = len([m for m in members if m.get('badge_image')])
         unissued = len(get_unissued_members())
-        
-        return render_template('index.html', 
+
+        return render_template('index.html',
                              total_members=total_members,
                              recent_members=recent_members,
                              total_bodas=total_bodas,
@@ -125,10 +213,10 @@ def index():
         return render_template('index.html', total_members=0, recent_members=[])
 
 @app.route('/register', methods=['GET', 'POST'])
+@login_required
 def register():
-    """Register a new member"""
     form = MemberRegistrationForm()
-    
+
     if request.method == 'POST' and form.validate_on_submit():
         try:
             data = {
@@ -150,21 +238,19 @@ def register():
                 'badge_issued_date': None,
                 'badge_issued_by': None
             }
-            
-            # Check for duplicates
+
             if get_member_by_number(data['member_number']):
                 flash(f'Member number {data["member_number"]} already exists.', 'danger')
                 return render_template('register.html', form=form)
-            
+
             if get_member_by_national_id(data['national_id']):
                 flash(f'National ID {data["national_id"]} already registered.', 'danger')
                 return render_template('register.html', form=form)
-            
+
             if get_member_by_telephone(data['telephone']):
                 flash(f'Telephone number {data["telephone"]} already registered.', 'danger')
                 return render_template('register.html', form=form)
-            
-            # Handle passport photo
+
             if 'passport_photo' in request.files:
                 file = request.files['passport_photo']
                 if file and file.filename:
@@ -174,8 +260,7 @@ def register():
                     else:
                         flash('Invalid photo file. Please upload a JPG, JPEG, or PNG image.', 'danger')
                         return render_template('register.html', form=form)
-            
-            # Generate QR code
+
             try:
                 qr_path, qr_filename = QRGenerator.generate_qr(data)
                 data['qr_code_data'] = qr_path
@@ -183,18 +268,13 @@ def register():
                 logger.error(f"Error generating QR code: {e}")
                 flash('Error generating QR code. Please try again.', 'danger')
                 return render_template('register.html', form=form)
-            
-            # Create member
+
             member_id = create_member(data)
-            
-            # Get the member data
             member = get_member(member_id)
-            
+
             if member:
-                # Generate badge
                 try:
                     badge_path, badge_filename = BadgeGenerator.generate_badge(member, include_bleed=True)
-                    # Update member with badge image
                     update_member(member_id, {'badge_image': badge_filename})
                     flash(f'Member {data["full_name"]} registered successfully with badge!', 'success')
                 except Exception as e:
@@ -202,26 +282,25 @@ def register():
                     flash('Member registered but badge generation failed. You can regenerate later.', 'warning')
             else:
                 flash('Member registered but could not retrieve data.', 'warning')
-            
+
             return redirect(url_for('view_badge', member_id=member_id))
-            
+
         except Exception as e:
             logger.error(f"Error registering member: {e}")
             flash('Error registering member. Please try again.', 'danger')
-    
+
     return render_template('register.html', form=form)
 
 @app.route('/dashboard')
+@login_required
 def dashboard():
-    """Member dashboard with search and pagination"""
     try:
         page = request.args.get('page', 1, type=int)
         search = request.args.get('search', '')
         filter_type = request.args.get('filter', 'all')
         per_page = 20
         offset = (page - 1) * per_page
-        
-        # Get members with filters
+
         if filter_type == 'issued':
             members = get_issued_members(per_page)
             total = len(get_issued_members())
@@ -231,17 +310,16 @@ def dashboard():
         else:
             members = get_all_members(per_page, offset, search)
             total = get_members_count(search)
-        
+
         total_pages = (total + per_page - 1) // per_page if total > 0 else 1
-        
-        # Get stats
+
         all_members = get_all_members(limit=1000)
         total_badges = len([m for m in all_members if m.get('badge_image')])
         unissued = len(get_unissued_members())
         issued = len(get_issued_members())
         groups = set([m.get('group_stage_name') for m in all_members if m.get('group_stage_name')])
         recent = get_recent_members(10)
-        
+
         pagination = {
             'page': page,
             'per_page': per_page,
@@ -252,7 +330,7 @@ def dashboard():
             'prev_num': page - 1 if page > 1 else 1,
             'next_num': page + 1 if page < total_pages else total_pages
         }
-        
+
         return render_template('dashboard.html',
                              members=members,
                              pagination=pagination,
@@ -270,15 +348,15 @@ def dashboard():
         return render_template('dashboard.html', members=[], pagination={'total': 0})
 
 @app.route('/member/edit/<int:member_id>', methods=['GET', 'POST'])
+@login_required
 def edit_member(member_id):
-    """Edit member details"""
     member = get_member(member_id)
     if not member:
         flash('Member not found.', 'danger')
         return redirect(url_for('dashboard'))
-    
+
     form = MemberRegistrationForm()
-    
+
     if request.method == 'POST' and form.validate_on_submit():
         try:
             data = {
@@ -293,26 +371,22 @@ def edit_member(member_id):
                 'next_of_kin_name': form.next_of_kin_name.data.strip().title(),
                 'next_of_kin_phone': form.next_of_kin_phone.data.strip()
             }
-            
-            # Check for duplicate member number (excluding current member)
+
             existing = get_member_by_number(data['member_number'])
             if existing and existing['id'] != member_id:
                 flash(f'Member number {data["member_number"]} already exists.', 'danger')
                 return render_template('edit_member.html', form=form, member=member)
-            
-            # Check for duplicate national ID
+
             existing = get_member_by_national_id(data['national_id'])
             if existing and existing['id'] != member_id:
                 flash(f'National ID {data["national_id"]} already registered.', 'danger')
                 return render_template('edit_member.html', form=form, member=member)
-            
-            # Check for duplicate telephone
+
             existing = get_member_by_telephone(data['telephone'])
             if existing and existing['id'] != member_id:
                 flash(f'Telephone number {data["telephone"]} already registered.', 'danger')
                 return render_template('edit_member.html', form=form, member=member)
-            
-            # Handle passport photo
+
             if 'passport_photo' in request.files:
                 file = request.files['passport_photo']
                 if file and file.filename:
@@ -322,24 +396,20 @@ def edit_member(member_id):
                     else:
                         flash('Invalid photo file. Please upload a JPG, JPEG, or PNG image.', 'danger')
                         return render_template('edit_member.html', form=form, member=member)
-            
-            # Update member
+
             update_member(member_id, data)
-            
-            # Regenerate badge with updated info
             updated_member = get_member(member_id)
             if updated_member:
                 badge_path, badge_filename = BadgeGenerator.generate_badge(updated_member, include_bleed=True)
                 update_member(member_id, {'badge_image': badge_filename})
-            
+
             flash('Member details updated successfully!', 'success')
             return redirect(url_for('view_badge', member_id=member_id))
-            
+
         except Exception as e:
             logger.error(f"Error updating member: {e}")
             flash('Error updating member. Please try again.', 'danger')
-    
-    # Populate form with member data
+
     form.member_number.data = member['member_number']
     form.full_name.data = member['full_name']
     form.national_id.data = member['national_id']
@@ -350,74 +420,66 @@ def edit_member(member_id):
     form.motorcycle_registration.data = member['motorcycle_registration']
     form.next_of_kin_name.data = member['next_of_kin_name']
     form.next_of_kin_phone.data = member['next_of_kin_phone']
-    
+
     return render_template('edit_member.html', form=form, member=member)
 
 @app.route('/member/delete/<int:member_id>', methods=['POST'])
+@login_required
 def delete_member_route(member_id):
-    """Delete a member"""
     try:
         member = get_member(member_id)
         if not member:
             return jsonify({'success': False, 'error': 'Member not found'}), 404
-        
-        # Delete photo files
+
         if member.get('passport_photo'):
             photo_path = os.path.join(Config.UPLOAD_FOLDER, member['passport_photo'])
             if os.path.exists(photo_path):
                 os.remove(photo_path)
-            
-            thumb_path = os.path.join(Config.UPLOAD_FOLDER, 
-                                     f"{member['member_number']}_thumb.jpg")
+            thumb_path = os.path.join(Config.UPLOAD_FOLDER, f"{member['member_number']}_thumb.jpg")
             if os.path.exists(thumb_path):
                 os.remove(thumb_path)
-        
-        # Delete badge
+
         if member.get('badge_image'):
             badge_path = os.path.join(Config.BADGE_FOLDER, member['badge_image'])
             if os.path.exists(badge_path):
                 os.remove(badge_path)
-        
-        # Delete QR code
+
         qr_path = os.path.join(Config.QR_FOLDER, f"qr_{member['member_number']}.png")
         if os.path.exists(qr_path):
             os.remove(qr_path)
-        
+
         delete_member(member_id)
         flash('Member deleted successfully.', 'success')
         return jsonify({'success': True})
-        
+
     except Exception as e:
         logger.error(f"Error deleting member: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/badge/<int:member_id>')
+@login_required
 def view_badge(member_id):
-    """View member badge"""
     member = get_member(member_id)
     if not member:
         flash('Member not found.', 'danger')
         return redirect(url_for('dashboard'))
-    
-    # Get issuance log
+
     issuance_log = get_issuance_log(member_id, 10)
-    
     return render_template('badge.html', member=member, issuance_log=issuance_log)
 
 @app.route('/badge/download/<int:member_id>')
+@login_required
 def download_badge(member_id):
-    """Download member badge as PNG"""
     member = get_member(member_id)
     if not member:
         flash('Member not found.', 'danger')
         return redirect(url_for('dashboard'))
-    
+
     format_type = request.args.get('format', 'png')
     include_bleed = request.args.get('bleed', 'false').lower() == 'true'
-    
+
     badge_filename = member.get('badge_image')
     if not badge_filename:
-        # Generate badge if it doesn't exist
         try:
             badge_path, badge_filename = BadgeGenerator.generate_badge(member, include_bleed=include_bleed)
             update_member(member_id, {'badge_image': badge_filename})
@@ -425,16 +487,14 @@ def download_badge(member_id):
             logger.error(f"Error generating badge: {e}")
             flash('Error generating badge.', 'danger')
             return redirect(url_for('view_badge', member_id=member_id))
-    
+
     badge_path = os.path.join(Config.BADGE_FOLDER, badge_filename)
     if not os.path.exists(badge_path):
         flash('Badge file not found.', 'danger')
         return redirect(url_for('view_badge', member_id=member_id))
-    
-    # Log issuance
+
     if format_type == 'pdf':
-        log_badge_issuance(member_id, 'system', format_type, 'high')
-        # Generate PDF
+        log_badge_issuance(member_id, current_user.username, format_type, 'high')
         try:
             pdf_path, pdf_filename = BadgeGenerator.generate_pdf_badge(member, include_bleed=include_bleed)
             return send_file(pdf_path,
@@ -445,134 +505,96 @@ def download_badge(member_id):
             logger.error(f"Error generating PDF: {e}")
             flash('Error generating PDF badge.', 'danger')
             return redirect(url_for('view_badge', member_id=member_id))
-    
-    # Log PNG issuance
-    log_badge_issuance(member_id, 'system', 'png', 'high')
+
+    log_badge_issuance(member_id, current_user.username, 'png', 'high')
     update_member(member_id, {
         'badge_issued': True,
         'badge_issued_date': datetime.now(),
-        'badge_issued_by': 'system',
+        'badge_issued_by': current_user.username,
         'badge_print_count': (member.get('badge_print_count', 0) + 1),
         'last_printed': datetime.now()
     })
-    
-    return send_file(badge_path, 
+
+    return send_file(badge_path,
                     as_attachment=True,
                     download_name=f"badge_{member['member_number']}.png",
                     mimetype='image/png')
 
-@app.route('/badge/download-pdf/<int:member_id>')
-def download_pdf_badge(member_id):
-    """Download member badge as PDF"""
-    member = get_member(member_id)
-    if not member:
-        flash('Member not found.', 'danger')
-        return redirect(url_for('dashboard'))
-    
-    include_bleed = request.args.get('bleed', 'true').lower() == 'true'
-    
-    try:
-        pdf_path, pdf_filename = BadgeGenerator.generate_pdf_badge(member, include_bleed=include_bleed)
-        
-        # Log issuance
-        log_badge_issuance(member_id, 'system', 'pdf', 'high')
-        update_member(member_id, {
-            'badge_issued': True,
-            'badge_issued_date': datetime.now(),
-            'badge_issued_by': 'system',
-            'badge_print_count': (member.get('badge_print_count', 0) + 1),
-            'last_printed': datetime.now()
-        })
-        
-        return send_file(pdf_path,
-                        as_attachment=True,
-                        download_name=f"badge_{member['member_number']}.pdf",
-                        mimetype='application/pdf')
-    except Exception as e:
-        logger.error(f"Error generating PDF badge: {e}")
-        flash('Error generating PDF badge.', 'danger')
-        return redirect(url_for('view_badge', member_id=member_id))
-
 @app.route('/badge/regenerate/<int:member_id>')
+@login_required
 def regenerate_badge(member_id):
-    """Regenerate member badge"""
     member = get_member(member_id)
     if not member:
         flash('Member not found.', 'danger')
         return redirect(url_for('dashboard'))
-    
+
     try:
-        # Delete old badge
         if member.get('badge_image'):
             old_badge_path = os.path.join(Config.BADGE_FOLDER, member['badge_image'])
             if os.path.exists(old_badge_path):
                 os.remove(old_badge_path)
-        
-        # Generate new badge with bleed
+
         badge_path, badge_filename = BadgeGenerator.generate_badge(member, include_bleed=True)
         update_member(member_id, {'badge_image': badge_filename})
-        
         flash('Badge regenerated successfully!', 'success')
     except Exception as e:
         logger.error(f"Error regenerating badge: {e}")
         flash('Error regenerating badge.', 'danger')
-    
+
     return redirect(url_for('view_badge', member_id=member_id))
 
 @app.route('/badge/issue/<int:member_id>', methods=['POST'])
+@login_required
 def issue_badge(member_id):
-    """Manually issue a badge to a member"""
     member = get_member(member_id)
     if not member:
         return jsonify({'success': False, 'error': 'Member not found'}), 404
-    
+
     try:
         update_member(member_id, {
             'badge_issued': True,
             'badge_issued_date': datetime.now(),
-            'badge_issued_by': request.form.get('issued_by', 'system'),
+            'badge_issued_by': request.form.get('issued_by', current_user.username),
             'badge_print_count': (member.get('badge_print_count', 0) + 1),
             'last_printed': datetime.now()
         })
-        
+
         log_badge_issuance(
             member_id,
-            request.form.get('issued_by', 'system'),
+            request.form.get('issued_by', current_user.username),
             request.form.get('format', 'standard'),
             request.form.get('quality', 'high'),
             request.form.get('notes', 'Manual issuance')
         )
-        
+
         return jsonify({'success': True})
     except Exception as e:
         logger.error(f"Error issuing badge: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/badge/batch', methods=['GET', 'POST'])
+@login_required
 def batch_badges():
-    """Batch badge issuance and printing"""
     form = BatchIssuanceForm()
-    
+
     if request.method == 'POST' and form.validate_on_submit():
         try:
             members = get_unissued_members()
             if not members:
                 flash('No unissued members found.', 'warning')
                 return redirect(url_for('batch_badges'))
-            
+
             format_type = form.format_type.data
             include_bleed = form.include_bleed.data
             print_quality = form.print_quality.data
-            
-            # Generate badges for all members
+
             results = BadgeGenerator.generate_batch_badges(members, include_bleed=include_bleed)
-            
-            # Log issuances
+
             for member in members:
                 if results.get(member['member_number'], {}).get('success'):
                     log_badge_issuance(
                         member['id'],
-                        'batch_system',
+                        current_user.username,
                         format_type,
                         print_quality,
                         f'Batch issuance on {datetime.now().strftime("%Y-%m-%d")}'
@@ -580,19 +602,18 @@ def batch_badges():
                     update_member(member['id'], {
                         'badge_issued': True,
                         'badge_issued_date': datetime.now(),
-                        'badge_issued_by': 'batch_system',
+                        'badge_issued_by': current_user.username,
                         'badge_print_count': (member.get('badge_print_count', 0) + 1),
                         'last_printed': datetime.now()
                     })
-            
+
             success_count = sum(1 for r in results.values() if r.get('success'))
             flash(f'Successfully generated {success_count} badges out of {len(members)} members.', 'success')
-            
-            # Create ZIP download if requested
+
             if format_type in ['pdf', 'both']:
                 zip_filename = f"badges_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
                 zip_path = os.path.join(Config.EXPORT_FOLDER, zip_filename)
-                
+
                 with zipfile.ZipFile(zip_path, 'w') as zip_file:
                     for member in members:
                         member_num = member['member_number']
@@ -604,84 +625,78 @@ def batch_badges():
                             png_path = os.path.join(Config.BADGE_FOLDER, f"badge_{member_num}.png")
                             if os.path.exists(png_path):
                                 zip_file.write(png_path, f"badge_{member_num}.png")
-                
+
                 return send_file(zip_path,
                                as_attachment=True,
                                download_name=zip_filename,
                                mimetype='application/zip')
-            
+
             return redirect(url_for('dashboard'))
-            
+
         except Exception as e:
             logger.error(f"Error in batch processing: {e}")
             flash('Error processing batch badges.', 'danger')
-    
+
     unissued_count = len(get_unissued_members())
     issued_count = len(get_issued_members())
-    
-    return render_template('batch_badges.html', 
+
+    return render_template('batch_badges.html',
                          form=form,
                          unissued_count=unissued_count,
                          issued_count=issued_count)
 
 @app.route('/verify-qr', methods=['GET', 'POST'])
 def verify_qr():
-    """Verify member by QR code"""
     form = QRVerificationForm()
     member = None
     error = None
-    
+
     if request.method == 'POST' and form.validate_on_submit():
         try:
             qr_data = form.qr_data.data.strip()
-            
-            # Try to parse QR data
             lines = qr_data.split('\n')
             member_number = None
-            
+
             for line in lines:
                 if line.startswith('Member:'):
                     member_number = line.replace('Member:', '').strip()
                     break
-            
+
             if member_number:
                 member = get_member_by_number(member_number)
                 if not member:
                     error = 'Member not found. Please check the QR code data.'
             else:
                 error = 'Invalid QR code data format.'
-                
+
         except Exception as e:
             logger.error(f"Error verifying QR: {e}")
             error = 'Error verifying QR code. Please try again.'
-    
+
     return render_template('verify_qr.html', form=form, member=member, error=error)
 
 @app.route('/export/members')
+@login_required
 def export_members():
-    """Export member data"""
     format_type = request.args.get('format', 'csv')
     member_ids = request.args.getlist('ids')
-    
+
     try:
         if member_ids:
             members = [get_member(int(id)) for id in member_ids if id]
         else:
             members = get_all_members(limit=10000)
-        
+
         if format_type == 'csv':
             import csv
             from io import StringIO
-            
+
             output = StringIO()
             writer = csv.writer(output)
-            
-            # Write header
-            headers = ['Member Number', 'Full Name', 'National ID', 'Telephone', 
+            headers = ['Member Number', 'Full Name', 'National ID', 'Telephone',
                       'Group', 'Chairman', 'Badge Issued', 'Date Registered']
             writer.writerow(headers)
-            
-            # Write data
+
             for m in members:
                 writer.writerow([
                     m['member_number'], m['full_name'], m['national_id'],
@@ -689,7 +704,7 @@ def export_members():
                     'Yes' if m.get('badge_issued') else 'No',
                     m.get('date_registered', '')
                 ])
-            
+
             output.seek(0)
             return send_file(
                 StringIO(output.getvalue()),
@@ -697,10 +712,10 @@ def export_members():
                 download_name=f"members_{datetime.now().strftime('%Y%m%d')}.csv",
                 mimetype='text/csv'
             )
-        
+
         flash(f'Export format {format_type} not supported yet.', 'warning')
         return redirect(url_for('dashboard'))
-        
+
     except Exception as e:
         logger.error(f"Error exporting members: {e}")
         flash('Error exporting members.', 'danger')
@@ -708,7 +723,6 @@ def export_members():
 
 @app.route('/health')
 def health_check():
-    """Health check endpoint for deployment"""
     return jsonify({
         'status': 'healthy',
         'timestamp': datetime.now().isoformat(),
@@ -717,9 +731,54 @@ def health_check():
             'badge_generation': True,
             'qr_codes': True,
             'batch_issuance': True,
-            'print_ready': True
+            'print_ready': True,
+            'authentication': True
         }
     })
+
+# ============================================================
+# LEGAL DOCUMENT ROUTES (Single definition)
+# ============================================================
+
+@app.route('/legal')
+def legal_documents():
+    """View all legal documents in one page"""
+    return render_template('legal.html')
+
+@app.route('/legal/terms')
+def legal_terms():
+    """View Terms of Service"""
+    return send_from_directory('legal', 'terms_of_service.md', mimetype='text/markdown')
+
+@app.route('/legal/privacy')
+def legal_privacy():
+    """View Privacy Policy"""
+    return send_from_directory('legal', 'privacy_policy.md', mimetype='text/markdown')
+
+@app.route('/legal/eula')
+def legal_eula():
+    """View End User License Agreement"""
+    return send_from_directory('legal', 'eula.md', mimetype='text/markdown')
+
+@app.route('/legal/user-manual')
+def legal_user_manual():
+    """View User Manual"""
+    return send_from_directory('legal', 'user_manual.md', mimetype='text/markdown')
+
+@app.route('/legal/admin-guide')
+def legal_admin_guide():
+    """View Admin Guide"""
+    return send_from_directory('legal', 'admin_guide.md', mimetype='text/markdown')
+
+@app.route('/legal/acceptable-use')
+def legal_acceptable_use():
+    """View Acceptable Use Policy"""
+    return send_from_directory('legal', 'acceptable_use_policy.md', mimetype='text/markdown')
+
+@app.route('/legal/consent')
+def legal_consent():
+    """View Consent Form"""
+    return send_from_directory('legal', 'consent_form.md', mimetype='text/markdown')
 
 # ----------------------------
 # Error Handlers

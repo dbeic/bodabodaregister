@@ -1,5 +1,5 @@
 """
-Database connection and operations module
+Database connection and operations module with authentication support
 """
 import os
 import psycopg
@@ -76,11 +76,12 @@ class Database:
 db = Database()
 
 def init_database():
-    """Initialize database tables with issuance tracking"""
+    """Initialize database tables with issuance tracking and authentication"""
     logger.info("Initializing database tables...")
     
     # SQL to create members table with issuance tracking
     create_table_sql = """
+    -- Members table
     CREATE TABLE IF NOT EXISTS members (
         id SERIAL PRIMARY KEY,
         member_number VARCHAR(50) UNIQUE NOT NULL,
@@ -107,6 +108,7 @@ def init_database():
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
     
+    -- Indexes for members
     CREATE INDEX IF NOT EXISTS idx_member_number ON members(member_number);
     CREATE INDEX IF NOT EXISTS idx_national_id ON members(national_id);
     CREATE INDEX IF NOT EXISTS idx_telephone ON members(telephone);
@@ -114,25 +116,79 @@ def init_database():
     CREATE INDEX IF NOT EXISTS idx_group_stage ON members(group_stage_name);
     CREATE INDEX IF NOT EXISTS idx_badge_issued ON members(badge_issued);
     
-    -- Create issuance log table
+    -- Badge issuance log table
     CREATE TABLE IF NOT EXISTS badge_issuance_log (
         id SERIAL PRIMARY KEY,
-        member_id INTEGER REFERENCES members(id),
+        member_id INTEGER REFERENCES members(id) ON DELETE CASCADE,
         issued_by VARCHAR(100),
         issued_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         print_format VARCHAR(20),
         print_quality VARCHAR(20),
         notes TEXT
     );
+    
+    -- ============================================================
+    -- AUTHENTICATION TABLES
+    -- ============================================================
+    
+    -- Admins table for authentication
+    CREATE TABLE IF NOT EXISTS admins (
+        id SERIAL PRIMARY KEY,
+        username VARCHAR(50) UNIQUE NOT NULL,
+        password_hash VARCHAR(200) NOT NULL,
+        email VARCHAR(100),
+        full_name VARCHAR(200),
+        role VARCHAR(50) DEFAULT 'admin',
+        is_active BOOLEAN DEFAULT TRUE,
+        last_login TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    
+    -- Admin login history
+    CREATE TABLE IF NOT EXISTS admin_login_history (
+        id SERIAL PRIMARY KEY,
+        admin_id INTEGER REFERENCES admins(id) ON DELETE CASCADE,
+        ip_address VARCHAR(50),
+        user_agent TEXT,
+        login_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        success BOOLEAN DEFAULT TRUE
+    );
+    
+    -- Password reset tokens
+    CREATE TABLE IF NOT EXISTS password_reset_tokens (
+        id SERIAL PRIMARY KEY,
+        admin_id INTEGER REFERENCES admins(id) ON DELETE CASCADE,
+        token VARCHAR(100) UNIQUE NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        expires_at TIMESTAMP,
+        used BOOLEAN DEFAULT FALSE
+    );
+    
+    -- Indexes for authentication tables
+    CREATE INDEX IF NOT EXISTS idx_admins_username ON admins(username);
+    CREATE INDEX IF NOT EXISTS idx_admins_email ON admins(email);
+    CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_token ON password_reset_tokens(token);
+    
+    -- ============================================================
+    -- DEFAULT ADMIN USER (password: Admin@2024)
+    -- ============================================================
+    INSERT INTO admins (username, password_hash, full_name, role, is_active)
+    SELECT 'admin', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5GyYdDqV7J9aC', 'System Administrator', 'super_admin', TRUE
+    WHERE NOT EXISTS (SELECT 1 FROM admins WHERE username = 'admin');
     """
     
     try:
         with db.get_cursor() as cur:
             cur.execute(create_table_sql)
-            logger.info("Database tables created successfully")
+            logger.info("Database tables created successfully with authentication support")
     except Exception as e:
         logger.error(f"Error creating tables: {e}")
         raise
+
+# ============================================================
+# MEMBER FUNCTIONS
+# ============================================================
 
 def create_member(data):
     """Insert a new member into the database"""
@@ -295,6 +351,156 @@ def get_issued_members(limit=None):
     if limit:
         query += f" LIMIT {limit}"
     return db.execute_query(query, fetch_all=True)
+
+# ============================================================
+# AUTHENTICATION FUNCTIONS
+# ============================================================
+
+def create_admin(username, password_hash, full_name=None, email=None, role='admin'):
+    """Create a new admin user"""
+    query = """
+    INSERT INTO admins (username, password_hash, full_name, email, role)
+    VALUES (%s, %s, %s, %s, %s)
+    RETURNING id;
+    """
+    with db.get_cursor() as cur:
+        cur.execute(query, (username, password_hash, full_name, email, role))
+        return cur.fetchone()[0]
+
+def get_admin_by_username(username):
+    """Get admin by username"""
+    query = "SELECT * FROM admins WHERE username = %s"
+    return db.execute_query(query, (username,), fetch_one=True)
+
+def get_admin_by_id(admin_id):
+    """Get admin by ID"""
+    query = "SELECT * FROM admins WHERE id = %s"
+    return db.execute_query(query, (admin_id,), fetch_one=True)
+
+def get_admin_by_email(email):
+    """Get admin by email"""
+    query = "SELECT * FROM admins WHERE email = %s"
+    return db.execute_query(query, (email,), fetch_one=True)
+
+def get_all_admins():
+    """Get all admin users"""
+    query = "SELECT id, username, email, full_name, role, is_active, last_login, created_at FROM admins ORDER BY created_at DESC"
+    return db.execute_query(query, fetch_all=True)
+
+def update_admin(admin_id, data):
+    """Update admin information"""
+    set_clauses = []
+    values = []
+    
+    allowed_fields = ['full_name', 'email', 'role', 'is_active']
+    for key, value in data.items():
+        if key in allowed_fields and value is not None:
+            set_clauses.append(f"{key} = %s")
+            values.append(value)
+    
+    if not set_clauses:
+        return None
+    
+    values.append(admin_id)
+    query = f"""
+    UPDATE admins 
+    SET {', '.join(set_clauses)}, updated_at = CURRENT_TIMESTAMP
+    WHERE id = %s
+    RETURNING id
+    """
+    
+    with db.get_cursor() as cur:
+        cur.execute(query, tuple(values))
+        result = cur.fetchone()
+        return result[0] if result else None
+
+def update_admin_password(admin_id, password_hash):
+    """Update admin password"""
+    query = "UPDATE admins SET password_hash = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s RETURNING id"
+    with db.get_cursor() as cur:
+        cur.execute(query, (password_hash, admin_id))
+        result = cur.fetchone()
+        return result[0] if result else None
+
+def log_admin_login(admin_id, ip_address=None, user_agent=None, success=True):
+    """Log admin login attempt"""
+    query = """
+    INSERT INTO admin_login_history (admin_id, ip_address, user_agent, success)
+    VALUES (%s, %s, %s, %s)
+    """
+    with db.get_cursor() as cur:
+        cur.execute(query, (admin_id, ip_address, user_agent, success))
+        return cur.rowcount > 0
+
+def update_last_login(admin_id):
+    """Update admin's last login timestamp"""
+    query = "UPDATE admins SET last_login = CURRENT_TIMESTAMP WHERE id = %s"
+    with db.get_cursor() as cur:
+        cur.execute(query, (admin_id,))
+        return cur.rowcount > 0
+
+def create_password_reset_token(admin_id, token, expires_at):
+    """Create a password reset token"""
+    query = """
+    INSERT INTO password_reset_tokens (admin_id, token, expires_at)
+    VALUES (%s, %s, %s)
+    RETURNING id
+    """
+    with db.get_cursor() as cur:
+        cur.execute(query, (admin_id, token, expires_at))
+        return cur.fetchone()[0]
+
+def get_password_reset_token(token):
+    """Get password reset token by token value"""
+    query = "SELECT * FROM password_reset_tokens WHERE token = %s AND used = FALSE AND expires_at > CURRENT_TIMESTAMP"
+    return db.execute_query(query, (token,), fetch_one=True)
+
+def mark_password_reset_token_used(token):
+    """Mark a password reset token as used"""
+    query = "UPDATE password_reset_tokens SET used = TRUE WHERE token = %s RETURNING id"
+    with db.get_cursor() as cur:
+        cur.execute(query, (token,))
+        result = cur.fetchone()
+        return result[0] if result else None
+
+def delete_admin(admin_id):
+    """Delete an admin user"""
+    query = "DELETE FROM admins WHERE id = %s RETURNING id"
+    result = db.execute_query(query, (admin_id,), fetch_one=True)
+    return result is not None
+
+def admin_exists(username=None, email=None):
+    """Check if admin exists by username or email"""
+    if username:
+        query = "SELECT id FROM admins WHERE username = %s"
+        result = db.execute_query(query, (username,), fetch_one=True)
+        return result is not None
+    elif email:
+        query = "SELECT id FROM admins WHERE email = %s"
+        result = db.execute_query(query, (email,), fetch_one=True)
+        return result is not None
+    return False
+
+def get_admin_count():
+    """Get total number of admins"""
+    query = "SELECT COUNT(*) as count FROM admins"
+    result = db.execute_query(query, fetch_one=True)
+    return result['count'] if result else 0
+
+# ============================================================
+# SESSION FUNCTIONS (Optional - for custom session management)
+# ============================================================
+
+def create_admin_session(admin_id, session_id, ip_address=None, user_agent=None):
+    """Create a session record for admin"""
+    query = """
+    INSERT INTO admin_sessions (admin_id, session_id, ip_address, user_agent)
+    VALUES (%s, %s, %s, %s)
+    RETURNING id
+    """
+    # Note: Need to create admin_sessions table if using this
+    # Table not created by default, uncomment if needed
+    pass
 
 # Initialize database on module import
 init_database()
