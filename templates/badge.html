@@ -6,18 +6,18 @@
 <div class="container py-4">
     <div class="row">
         <div class="col-12">
-            <h2>
+            <h2 class="no-print">
                 <i class="fas fa-id-card text-gold"></i>
                 Member Identification Badge
             </h2>
-            <p class="text-muted">View, download, and print the member identification badge.</p>
+            <p class="text-muted no-print">View, download, and print the member identification badge.</p>
         </div>
     </div>
 
     <div class="row">
         <div class="col-lg-8 mx-auto">
             <!-- Member Info -->
-            <div class="card mb-4">
+            <div class="card mb-4 no-print">
                 <div class="card-body">
                     <div class="row">
                         <div class="col-md-6">
@@ -77,27 +77,23 @@
                             </table>
                         </div>
                     </div>
-                    <div class="row mt-3">
+                    <div class="row mt-3 no-print">
                         <div class="col-12">
                             <h5>Actions</h5>
                             <div class="d-flex flex-wrap gap-2">
-                                <a href="{{ url_for('download_badge', member_id=member.id) }}" 
-                                   class="btn btn-gold">
+                                <a href="{{ url_for('download_badge', member_id=member.id) }}" class="btn btn-gold">
                                     <i class="fas fa-download me-2"></i>Download PNG
                                 </a>
-                                <a href="{{ url_for('download_badge', member_id=member.id, format='pdf') }}" 
-                                   class="btn btn-outline-primary">
+                                <a href="{{ url_for('download_badge', member_id=member.id, format='pdf') }}" class="btn btn-outline-primary">
                                     <i class="fas fa-file-pdf me-2"></i>Download PDF
                                 </a>
-                                <a href="{{ url_for('download_badge', member_id=member.id, bleed='true') }}" 
-                                   class="btn btn-outline-success">
+                                <a href="{{ url_for('download_badge', member_id=member.id, bleed='true') }}" class="btn btn-outline-success">
                                     <i class="fas fa-cut me-2"></i>With Bleed
                                 </a>
                                 <a href="#" onclick="window.print()" class="btn btn-outline-secondary">
                                     <i class="fas fa-print me-2"></i>Print
                                 </a>
-                                <a href="{{ url_for('regenerate_badge', member_id=member.id) }}" 
-                                   class="btn btn-outline-warning">
+                                <a href="{{ url_for('regenerate_badge', member_id=member.id) }}" class="btn btn-outline-warning">
                                     <i class="fas fa-sync me-2"></i>Regenerate
                                 </a>
                                 <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary">
@@ -111,7 +107,7 @@
 
             <!-- Issuance Log -->
             {% if issuance_log %}
-            <div class="card mb-4">
+            <div class="card mb-4 no-print">
                 <div class="card-header">
                     <h5 class="mb-0"><i class="fas fa-history me-2"></i>Issuance History</h5>
                 </div>
@@ -144,78 +140,142 @@
             </div>
             {% endif %}
 
-            <!-- Badge Display -->
-            <div class="card">
-                <div class="card-header">
-                    <h5 class="mb-0"><i class="fas fa-id-card me-2"></i>Badge Preview</h5>
-                </div>
-                <div class="card-body text-center">
-                    {% if member.badge_image %}
-                        <img src="{{ url_for('static', filename='badges/' + member.badge_image) }}" 
-                             alt="Member Badge" 
-                             class="img-fluid badge-display"
-                             style="max-width: 100%; border: 1px solid #ddd; border-radius: 10px;">
-                        <p class="text-muted mt-2">
-                            <i class="fas fa-info-circle"></i> 
-                            Scan the QR code to verify member details
-                        </p>
-                        <div class="btn-group mt-2" role="group">
-                            <a href="{{ url_for('static', filename='badges/' + member.badge_image) }}" 
-                               target="_blank" class="btn btn-sm btn-outline-primary">
-                                <i class="fas fa-eye"></i> View Full
-                            </a>
-                            <button onclick="window.print()" class="btn btn-sm btn-outline-secondary">
-                                <i class="fas fa-print"></i> Print
-                            </button>
-                        </div>
-                    {% else %}
-                        <div class="alert alert-warning">
-                            <i class="fas fa-exclamation-triangle me-2"></i>
-                            No badge has been generated for this member yet.
-                        </div>
-                        <a href="{{ url_for('regenerate_badge', member_id=member.id) }}" class="btn btn-gold">
-                            <i class="fas fa-id-card me-2"></i>Generate Badge
-                        </a>
-                    {% endif %}
-                </div>
+            <!-- Badge Display - ONLY THIS PRINTS -->
+            <div class="print-container">
+                {% if member.badge_image %}
+                    <img src="{{ url_for('static', filename='badges/' + member.badge_image) }}" 
+                         alt="Member Badge" 
+                         class="badge-print-image">
+                {% else %}
+                    <div class="alert alert-warning">
+                        <i class="fas fa-exclamation-triangle me-2"></i>
+                        No badge has been generated for this member yet.
+                    </div>
+                    <a href="{{ url_for('regenerate_badge', member_id=member.id) }}" class="btn btn-gold">
+                        <i class="fas fa-id-card me-2"></i>Generate Badge
+                    </a>
+                {% endif %}
             </div>
         </div>
     </div>
 </div>
 
 <style>
-    .text-gold {
-        color: var(--gold);
+    .text-gold { color: var(--gold); }
+    .btn-gold { background-color: var(--gold); color: white; }
+    .btn-gold:hover { background-color: #c9a84a; color: white; }
+    .badge-print-image {
+        width: 100%;
+        max-width: 100%;
+        height: auto;
+        display: block;
+        margin: 0 auto;
     }
     
-    .btn-gold {
-        background-color: var(--gold);
-        color: white;
+    .print-container {
+        padding: 0;
+        margin: 0;
+        background: white;
     }
-    
-    .btn-gold:hover {
-        background-color: #c9a84a;
-        color: white;
-    }
-    
-    .badge-display {
-        max-height: 600px;
-        object-fit: contain;
-    }
-    
+
+    /* ================================================================
+       PRINT STYLES - SINGLE PAGE ONLY
+    ================================================================ */
     @media print {
-        .navbar, .footer, .card-header, .btn, .alert {
+        /* Hide everything */
+        .no-print {
             display: none !important;
         }
+        
+        /* Hide navbar, footer, alerts, buttons */
+        nav, footer, .navbar, .footer, .alert, .btn, 
+        .card-header, .card-footer, .container-fluid {
+            display: none !important;
+        }
+        
+        /* Reset body */
+        body, html {
+            margin: 0 !important;
+            padding: 0 !important;
+            background: white !important;
+            width: 100% !important;
+            height: 100% !important;
+            min-height: 100% !important;
+        }
+        
+        /* Reset container */
+        .container, .row, .col-lg-8, .col-12 {
+            max-width: 100% !important;
+            width: 100% !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            flex: 0 0 100% !important;
+        }
+        
+        /* Hide cards */
         .card {
             border: none !important;
             box-shadow: none !important;
+            border-radius: 0 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: transparent !important;
         }
-        .badge-display {
-            max-height: none;
+        
+        .card-body {
+            padding: 0 !important;
+            margin: 0 !important;
         }
-        .table-responsive {
-            display: none !important;
+        
+        /* Show only the print container */
+        .print-container {
+            display: block !important;
+            position: absolute !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            background: white !important;
+            z-index: 9999 !important;
+        }
+        
+        /* Badge image - full page */
+        .badge-print-image {
+            width: 100% !important;
+            height: 100% !important;
+            max-width: 100% !important;
+            max-height: 100% !important;
+            object-fit: contain !important;
+            object-position: center !important;
+            display: block !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            border: none !important;
+            border-radius: 0 !important;
+            box-shadow: none !important;
+        }
+        
+        /* Force colors */
+        * {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            color-adjust: exact !important;
+        }
+        
+        /* Single page */
+        @page {
+            size: auto !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+        
+        /* Prevent page breaks */
+        .print-container, .badge-print-image {
+            page-break-after: avoid !important;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
         }
     }
 </style>

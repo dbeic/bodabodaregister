@@ -91,3 +91,6 @@ config = {
 
 # Ensure directories on import
 Config.ensure_directories()
+
+# Static folder path (for logos and other static assets)
+STATIC_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static')

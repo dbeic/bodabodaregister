@@ -172,10 +172,10 @@ class ImageProcessor:
             # Process image with print quality
             processed_path = ImageProcessor.resize_passport_photo(filepath, dpi=Config.BADGE_DPI)
             
-            # Create thumbnail
+            # Create thumbnail (smaller for preview)
             thumb_filename = f"{member_number}_thumb.{ext}"
             thumb_path = os.path.join(Config.UPLOAD_FOLDER, thumb_filename)
-            ImageProcessor.create_thumbnail(filepath, thumb_path)
+            ImageProcessor.create_thumbnail(filepath, thumb_path, size=(150, 180))
             
             return filename, processed_path
             

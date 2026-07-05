@@ -5,13 +5,11 @@ Complete Flask Application with PostgreSQL, QR Codes, and Professional Badges
 import os
 import logging
 import zipfile
-import tempfile
 from datetime import datetime
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_file, send_from_directory
-from werkzeug.utils import secure_filename
 from flask_wtf import FlaskForm
 from wtforms import StringField, FileField, HiddenField, SelectField, BooleanField
-from wtforms.validators import DataRequired, Length, Regexp
+from wtforms.validators import DataRequired, Length
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from flask_bcrypt import Bcrypt
 from flask_wtf.csrf import CSRFProtect
@@ -20,12 +18,12 @@ from database import (
     db, create_member, get_member, get_member_by_number,
     get_member_by_national_id, get_member_by_telephone,
     get_all_members, get_members_count, update_member,
-    delete_member, get_recent_members, search_members_by_qr,
+    delete_member, get_recent_members,
     get_unissued_members, get_issued_members, log_badge_issuance,
     get_issuance_log,
-    get_admin_by_id, get_admin_by_username, get_admin_by_email,
-    create_admin, update_admin_password, log_admin_login,
-    update_last_login, admin_exists
+    get_admin_by_id, get_admin_by_username,
+    update_admin_password, log_admin_login,
+    update_last_login
 )
 from utils.qr_generator import QRGenerator
 from utils.image_processor import ImageProcessor
@@ -45,8 +43,7 @@ Config.ensure_directories()
 # CSRF Protection
 csrf = CSRFProtect(app)
 
-app.jinja_env.globals['csrf_token'] = lambda: csrf._get_csrf_token()
-# Initialize Bcrypt for password hashing
+# Initialize Bcrypt
 bcrypt = Bcrypt(app)
 
 # Initialize Login Manager
@@ -68,26 +65,17 @@ def format_datetime(value, format='%Y-%m-%d %H:%M'):
             return value
     return value.strftime(format)
 
-# Register custom filter
 app.jinja_env.filters['datetime'] = format_datetime
 
 # Application context processor
 @app.context_processor
 def inject_config():
-    """Inject configuration into templates"""
     return {
         'config': {
             'GROUP_NAME': Config.GROUP_NAME,
             'APP_NAME': Config.APP_NAME
         },
-        'current_user': current_user,
-        'legal_links': [
-            {'name': 'Terms of Service', 'url': url_for('legal_terms')},
-            {'name': 'Privacy Policy', 'url': url_for('legal_privacy')},
-            {'name': 'EULA', 'url': url_for('legal_eula')},
-            {'name': 'User Manual', 'url': url_for('legal_user_manual')},
-            {'name': 'Admin Guide', 'url': url_for('legal_admin_guide')},
-        ]
+        'current_user': current_user
     }
 
 # ----------------------------
@@ -101,10 +89,11 @@ class Admin(UserMixin):
         self.role = admin_data.get('role', 'admin')
         self.full_name = admin_data.get('full_name', '')
         self.email = admin_data.get('email', '')
-        self.active = admin_data.get('is_active', True)
+        self._active = admin_data.get('is_active', True)
     
-    def has_role(self, role):
-        return self.role == role or self.role == 'super_admin'
+    @property
+    def is_active(self):
+        return self._active
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -136,7 +125,7 @@ class QRVerificationForm(FlaskForm):
 
 class BatchIssuanceForm(FlaskForm):
     format_type = SelectField('Print Format', choices=[('png', 'PNG'), ('pdf', 'PDF'), ('both', 'Both')])
-    include_bleed = BooleanField('Include Bleed Area (for professional printing)')
+    include_bleed = BooleanField('Include Bleed Area')
     print_quality = SelectField('Print Quality', choices=[('draft', 'Draft'), ('standard', 'Standard'), ('high', 'High')])
 
 class LoginForm(FlaskForm):
@@ -154,7 +143,7 @@ def login():
     
     form = LoginForm()
     
-    if request.method == 'POST' and form.validate_on_submit():
+    if form.validate_on_submit():
         username = form.username.data.strip()
         password = form.password.data
         
@@ -163,7 +152,7 @@ def login():
         if admin and bcrypt.check_password_hash(admin['password_hash'], password):
             if admin.get('is_active', True):
                 user = Admin(admin)
-                login_user(user)
+                login_user(user, remember=True)
                 update_last_login(admin['id'])
                 log_admin_login(admin['id'], request.remote_addr, request.user_agent.string, True)
                 flash(f'Welcome back, {admin.get("full_name", username)}!', 'success')
@@ -173,7 +162,7 @@ def login():
                     return redirect(next_page)
                 return redirect(url_for('dashboard'))
             else:
-                flash('Your account has been deactivated. Please contact the administrator.', 'danger')
+                flash('Your account has been deactivated.', 'danger')
         else:
             if admin:
                 log_admin_login(admin['id'], request.remote_addr, request.user_agent.string, False)
@@ -218,7 +207,7 @@ def index():
 def register():
     form = MemberRegistrationForm()
 
-    if request.method == 'POST' and form.validate_on_submit():
+    if form.validate_on_submit():
         try:
             data = {
                 'member_number': form.member_number.data.upper().strip(),
@@ -358,7 +347,7 @@ def edit_member(member_id):
 
     form = MemberRegistrationForm()
 
-    if request.method == 'POST' and form.validate_on_submit():
+    if form.validate_on_submit():
         try:
             data = {
                 'member_number': form.member_number.data.upper().strip(),
@@ -498,10 +487,7 @@ def download_badge(member_id):
         log_badge_issuance(member_id, current_user.username, format_type, 'high')
         try:
             pdf_path, pdf_filename = BadgeGenerator.generate_pdf_badge(member, include_bleed=include_bleed)
-            return send_file(pdf_path,
-                           as_attachment=True,
-                           download_name=f"badge_{member['member_number']}.pdf",
-                           mimetype='application/pdf')
+            return send_file(pdf_path, as_attachment=True, download_name=f"badge_{member['member_number']}.pdf", mimetype='application/pdf')
         except Exception as e:
             logger.error(f"Error generating PDF: {e}")
             flash('Error generating PDF badge.', 'danger')
@@ -516,10 +502,7 @@ def download_badge(member_id):
         'last_printed': datetime.now()
     })
 
-    return send_file(badge_path,
-                    as_attachment=True,
-                    download_name=f"badge_{member['member_number']}.png",
-                    mimetype='image/png')
+    return send_file(badge_path, as_attachment=True, download_name=f"badge_{member['member_number']}.png", mimetype='image/png')
 
 @app.route('/badge/regenerate/<int:member_id>')
 @login_required
@@ -578,7 +561,7 @@ def issue_badge(member_id):
 def batch_badges():
     form = BatchIssuanceForm()
 
-    if request.method == 'POST' and form.validate_on_submit():
+    if form.validate_on_submit():
         try:
             members = get_unissued_members()
             if not members:
@@ -627,10 +610,7 @@ def batch_badges():
                             if os.path.exists(png_path):
                                 zip_file.write(png_path, f"badge_{member_num}.png")
 
-                return send_file(zip_path,
-                               as_attachment=True,
-                               download_name=zip_filename,
-                               mimetype='application/zip')
+                return send_file(zip_path, as_attachment=True, download_name=zip_filename, mimetype='application/zip')
 
             return redirect(url_for('dashboard'))
 
@@ -641,10 +621,7 @@ def batch_badges():
     unissued_count = len(get_unissued_members())
     issued_count = len(get_issued_members())
 
-    return render_template('batch_badges.html',
-                         form=form,
-                         unissued_count=unissued_count,
-                         issued_count=issued_count)
+    return render_template('batch_badges.html', form=form, unissued_count=unissued_count, issued_count=issued_count)
 
 @app.route('/verify-qr', methods=['GET', 'POST'])
 def verify_qr():
@@ -652,7 +629,7 @@ def verify_qr():
     member = None
     error = None
 
-    if request.method == 'POST' and form.validate_on_submit():
+    if form.validate_on_submit():
         try:
             qr_data = form.qr_data.data.strip()
             lines = qr_data.split('\n')
@@ -707,12 +684,7 @@ def export_members():
                 ])
 
             output.seek(0)
-            return send_file(
-                StringIO(output.getvalue()),
-                as_attachment=True,
-                download_name=f"members_{datetime.now().strftime('%Y%m%d')}.csv",
-                mimetype='text/csv'
-            )
+            return send_file(StringIO(output.getvalue()), as_attachment=True, download_name=f"members_{datetime.now().strftime('%Y%m%d')}.csv", mimetype='text/csv')
 
         flash(f'Export format {format_type} not supported yet.', 'warning')
         return redirect(url_for('dashboard'))
@@ -738,47 +710,39 @@ def health_check():
     })
 
 # ============================================================
-# LEGAL DOCUMENT ROUTES (Single definition)
+# LEGAL DOCUMENT ROUTES
 # ============================================================
 
 @app.route('/legal')
 def legal_documents():
-    """View all legal documents in one page"""
     return render_template('legal.html')
 
 @app.route('/legal/terms')
 def legal_terms():
-    """View Terms of Service"""
     return send_from_directory('legal', 'terms_of_service.md', mimetype='text/markdown')
 
 @app.route('/legal/privacy')
 def legal_privacy():
-    """View Privacy Policy"""
     return send_from_directory('legal', 'privacy_policy.md', mimetype='text/markdown')
 
 @app.route('/legal/eula')
 def legal_eula():
-    """View End User License Agreement"""
     return send_from_directory('legal', 'eula.md', mimetype='text/markdown')
 
 @app.route('/legal/user-manual')
 def legal_user_manual():
-    """View User Manual"""
     return send_from_directory('legal', 'user_manual.md', mimetype='text/markdown')
 
 @app.route('/legal/admin-guide')
 def legal_admin_guide():
-    """View Admin Guide"""
     return send_from_directory('legal', 'admin_guide.md', mimetype='text/markdown')
 
 @app.route('/legal/acceptable-use')
 def legal_acceptable_use():
-    """View Acceptable Use Policy"""
     return send_from_directory('legal', 'acceptable_use_policy.md', mimetype='text/markdown')
 
 @app.route('/legal/consent')
 def legal_consent():
-    """View Consent Form"""
     return send_from_directory('legal', 'consent_form.md', mimetype='text/markdown')
 
 # ----------------------------
