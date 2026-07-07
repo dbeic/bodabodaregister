@@ -1,18 +1,21 @@
 """
-Bodaboda SACCO Member Registration and Badge Generation System
+BBS (Busia Bodaboda SACCO) Member Registration and Badge Generation System
 Complete Flask Application with PostgreSQL, QR Codes, and Professional Badges
 """
 import os
 import logging
 import zipfile
-from datetime import datetime
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_file, send_from_directory
+import re
+from datetime import datetime, timezone, timedelta
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_file, send_from_directory, make_response
 from flask_wtf import FlaskForm
 from wtforms import StringField, FileField, HiddenField, SelectField, BooleanField
-from wtforms.validators import DataRequired, Length
+from wtforms.validators import DataRequired, Length, Optional
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from flask_bcrypt import Bcrypt
 from flask_wtf.csrf import CSRFProtect
+from werkzeug.utils import secure_filename
+from werkzeug.middleware.proxy_fix import ProxyFix
 from config import config, Config
 from database import (
     db, create_member, get_member, get_member_by_number,
@@ -37,6 +40,9 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 app.config.from_object(config['production'])
 
+# Enable ProxyFix for production
+app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
+
 # Ensure directories exist
 Config.ensure_directories()
 
@@ -52,6 +58,7 @@ login_manager.init_app(app)
 login_manager.login_view = 'login'
 login_manager.login_message = 'Please login to access this page.'
 login_manager.login_message_category = 'warning'
+login_manager.session_protection = 'strong'
 
 # Custom Jinja2 filter for datetime
 @app.template_filter('datetime')
@@ -65,7 +72,19 @@ def format_datetime(value, format='%Y-%m-%d %H:%M'):
             return value
     return value.strftime(format)
 
+@app.template_filter('datetime_iso')
+def format_datetime_iso(value):
+    if value is None:
+        return ''
+    if isinstance(value, str):
+        try:
+            value = datetime.strptime(value, '%Y-%m-%d %H:%M:%S')
+        except ValueError:
+            return value
+    return value.isoformat()
+
 app.jinja_env.filters['datetime'] = format_datetime
+app.jinja_env.filters['datetime_iso'] = format_datetime_iso
 
 # Application context processor
 @app.context_processor
@@ -73,10 +92,25 @@ def inject_config():
     return {
         'config': {
             'GROUP_NAME': Config.GROUP_NAME,
-            'APP_NAME': Config.APP_NAME
+            'APP_NAME': Config.APP_NAME,
+            'OFFICIAL_NAME': 'BBS (Busia Bodaboda SACCO)'
         },
-        'current_user': current_user
+        'current_user': current_user,
+        'now': datetime.now(timezone.utc)
     }
+
+# Security headers middleware
+@app.after_request
+def add_security_headers(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; img-src 'self' data:; font-src 'self' https://cdnjs.cloudflare.com;"
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
 
 # ----------------------------
 # User Class for Flask-Login
@@ -111,7 +145,7 @@ class MemberRegistrationForm(FlaskForm):
     full_name = StringField('Full Name', validators=[DataRequired(), Length(min=2, max=200)])
     national_id = StringField('National ID', validators=[DataRequired(), Length(min=5, max=20)])
     telephone = StringField('Telephone', validators=[DataRequired(), Length(min=10, max=15)])
-    passport_photo = FileField('Passport Photo')
+    passport_photo = FileField('Passport Photo', validators=[Optional()])
     group_stage_name = StringField('Group/Stage Name', validators=[DataRequired()])
     chairman_name = StringField('Chairman Name', validators=[DataRequired()])
     chairman_phone = StringField('Chairman Phone', validators=[DataRequired()])
@@ -152,7 +186,7 @@ def login():
         if admin and bcrypt.check_password_hash(admin['password_hash'], password):
             if admin.get('is_active', True):
                 user = Admin(admin)
-                login_user(user, remember=True)
+                login_user(user, remember=True, duration=timedelta(hours=8))
                 update_last_login(admin['id'])
                 log_admin_login(admin['id'], request.remote_addr, request.user_agent.string, True)
                 flash(f'Welcome back, {admin.get("full_name", username)}!', 'success')
@@ -206,6 +240,7 @@ def index():
 @login_required
 def register():
     form = MemberRegistrationForm()
+    now = datetime.now(timezone.utc)
 
     if form.validate_on_submit():
         try:
@@ -220,7 +255,7 @@ def register():
                 'motorcycle_registration': form.motorcycle_registration.data.strip().upper(),
                 'next_of_kin_name': form.next_of_kin_name.data.strip().title(),
                 'next_of_kin_phone': form.next_of_kin_phone.data.strip(),
-                'date_registered': datetime.now().strftime('%Y-%m-%d'),
+                'date_registered': now.strftime('%Y-%m-%d'),
                 'passport_photo': None,
                 'qr_code_data': None,
                 'badge_image': None,
@@ -241,15 +276,70 @@ def register():
                 flash(f'Telephone number {data["telephone"]} already registered.', 'danger')
                 return render_template('register.html', form=form)
 
+            # Handle photo upload or camera capture
+            photo_processed = False
             if 'passport_photo' in request.files:
                 file = request.files['passport_photo']
                 if file and file.filename:
                     if ImageProcessor.validate_image(file):
                         filename, filepath = ImageProcessor.save_uploaded_file(file, data['member_number'])
                         data['passport_photo'] = filename
+                        photo_processed = True
                     else:
                         flash('Invalid photo file. Please upload a JPG, JPEG, or PNG image.', 'danger')
                         return render_template('register.html', form=form)
+            
+            # Check for camera captured image (base64 data from canvas)
+            camera_photo = request.form.get('camera_photo_data')
+            if camera_photo and not photo_processed:
+                try:
+                    import base64
+                    from io import BytesIO
+                    from PIL import Image
+                    
+                    # Decode base64 image data
+                    if 'data:image' in camera_photo:
+                        # Remove data URL prefix
+                        header, encoded = camera_photo.split(',', 1)
+                        image_data = base64.b64decode(encoded)
+                    else:
+                        image_data = base64.b64decode(camera_photo)
+                    
+                    # Create PIL image
+                    img = Image.open(BytesIO(image_data))
+                    
+                    # Ensure RGB mode
+                    if img.mode != 'RGB':
+                        img = img.convert('RGB')
+                    
+                    # Process image through the same pipeline as uploaded images
+                    filename = f"{data['member_number']}.jpg"
+                    filepath = os.path.join(Config.UPLOAD_FOLDER, filename)
+                    
+                    # Save with proper orientation
+                    img = ImageProcessor.normalize_orientation(img)
+                    
+                    # Resize to passport photo dimensions
+                    img = ImageProcessor.resize_passport_photo_from_image(img, dpi=Config.BADGE_DPI)
+                    
+                    # Save
+                    img.save(filepath, 'JPEG', quality=95, optimize=True, dpi=(Config.BADGE_DPI, Config.BADGE_DPI))
+                    
+                    # Create thumbnail
+                    thumb_filename = f"{data['member_number']}_thumb.jpg"
+                    thumb_path = os.path.join(Config.UPLOAD_FOLDER, thumb_filename)
+                    thumb = img.copy()
+                    thumb.thumbnail((150, 180), Image.LANCZOS)
+                    thumb.save(thumb_path, 'JPEG', quality=85, optimize=True)
+                    
+                    data['passport_photo'] = filename
+                    photo_processed = True
+                    
+                    logger.info(f"Camera photo captured and stored for member: {data['member_number']}")
+                except Exception as e:
+                    logger.error(f"Error processing camera photo: {e}")
+                    flash('Error processing camera photo. Please try again or upload a photo.', 'danger')
+                    return render_template('register.html', form=form)
 
             try:
                 qr_path, qr_filename = QRGenerator.generate_qr(data)
@@ -377,6 +467,7 @@ def edit_member(member_id):
                 flash(f'Telephone number {data["telephone"]} already registered.', 'danger')
                 return render_template('edit_member.html', form=form, member=member)
 
+            # Handle photo upload
             if 'passport_photo' in request.files:
                 file = request.files['passport_photo']
                 if file and file.filename:
@@ -386,6 +477,44 @@ def edit_member(member_id):
                     else:
                         flash('Invalid photo file. Please upload a JPG, JPEG, or PNG image.', 'danger')
                         return render_template('edit_member.html', form=form, member=member)
+
+            # Handle camera capture on edit
+            camera_photo = request.form.get('camera_photo_data')
+            if camera_photo and 'passport_photo' not in data:
+                try:
+                    import base64
+                    from io import BytesIO
+                    from PIL import Image
+                    
+                    if 'data:image' in camera_photo:
+                        header, encoded = camera_photo.split(',', 1)
+                        image_data = base64.b64decode(encoded)
+                    else:
+                        image_data = base64.b64decode(camera_photo)
+                    
+                    img = Image.open(BytesIO(image_data))
+                    if img.mode != 'RGB':
+                        img = img.convert('RGB')
+                    
+                    filename = f"{data['member_number']}.jpg"
+                    filepath = os.path.join(Config.UPLOAD_FOLDER, filename)
+                    
+                    img = ImageProcessor.normalize_orientation(img)
+                    img = ImageProcessor.resize_passport_photo_from_image(img, dpi=Config.BADGE_DPI)
+                    
+                    img.save(filepath, 'JPEG', quality=95, optimize=True, dpi=(Config.BADGE_DPI, Config.BADGE_DPI))
+                    
+                    thumb_filename = f"{data['member_number']}_thumb.jpg"
+                    thumb_path = os.path.join(Config.UPLOAD_FOLDER, thumb_filename)
+                    thumb = img.copy()
+                    thumb.thumbnail((150, 180), Image.LANCZOS)
+                    thumb.save(thumb_path, 'JPEG', quality=85, optimize=True)
+                    
+                    data['passport_photo'] = filename
+                except Exception as e:
+                    logger.error(f"Error processing camera photo in edit: {e}")
+                    flash('Error processing camera photo.', 'danger')
+                    return render_template('edit_member.html', form=form, member=member)
 
             update_member(member_id, data)
             updated_member = get_member(member_id)
@@ -483,6 +612,8 @@ def download_badge(member_id):
         flash('Badge file not found.', 'danger')
         return redirect(url_for('view_badge', member_id=member_id))
 
+    now = datetime.now(timezone.utc)
+    
     if format_type == 'pdf':
         log_badge_issuance(member_id, current_user.username, format_type, 'high')
         try:
@@ -496,10 +627,10 @@ def download_badge(member_id):
     log_badge_issuance(member_id, current_user.username, 'png', 'high')
     update_member(member_id, {
         'badge_issued': True,
-        'badge_issued_date': datetime.now(),
+        'badge_issued_date': now,
         'badge_issued_by': current_user.username,
         'badge_print_count': (member.get('badge_print_count', 0) + 1),
-        'last_printed': datetime.now()
+        'last_printed': now
     })
 
     return send_file(badge_path, as_attachment=True, download_name=f"badge_{member['member_number']}.png", mimetype='image/png')
@@ -535,12 +666,13 @@ def issue_badge(member_id):
         return jsonify({'success': False, 'error': 'Member not found'}), 404
 
     try:
+        now = datetime.now(timezone.utc)
         update_member(member_id, {
             'badge_issued': True,
-            'badge_issued_date': datetime.now(),
+            'badge_issued_date': now,
             'badge_issued_by': request.form.get('issued_by', current_user.username),
             'badge_print_count': (member.get('badge_print_count', 0) + 1),
-            'last_printed': datetime.now()
+            'last_printed': now
         })
 
         log_badge_issuance(
@@ -560,6 +692,9 @@ def issue_badge(member_id):
 @login_required
 def batch_badges():
     form = BatchIssuanceForm()
+    unissued_members = get_unissued_members()
+    unissued_count = len(unissued_members)
+    issued_count = len(get_issued_members())
 
     if form.validate_on_submit():
         try:
@@ -574,6 +709,7 @@ def batch_badges():
 
             results = BadgeGenerator.generate_batch_badges(members, include_bleed=include_bleed)
 
+            now = datetime.now(timezone.utc)
             for member in members:
                 if results.get(member['member_number'], {}).get('success'):
                     log_badge_issuance(
@@ -581,21 +717,21 @@ def batch_badges():
                         current_user.username,
                         format_type,
                         print_quality,
-                        f'Batch issuance on {datetime.now().strftime("%Y-%m-%d")}'
+                        f'Batch issuance on {now.strftime("%Y-%m-%d")}'
                     )
                     update_member(member['id'], {
                         'badge_issued': True,
-                        'badge_issued_date': datetime.now(),
+                        'badge_issued_date': now,
                         'badge_issued_by': current_user.username,
                         'badge_print_count': (member.get('badge_print_count', 0) + 1),
-                        'last_printed': datetime.now()
+                        'last_printed': now
                     })
 
             success_count = sum(1 for r in results.values() if r.get('success'))
             flash(f'Successfully generated {success_count} badges out of {len(members)} members.', 'success')
 
             if format_type in ['pdf', 'both']:
-                zip_filename = f"badges_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+                zip_filename = f"badges_{now.strftime('%Y%m%d_%H%M%S')}.zip"
                 zip_path = os.path.join(Config.EXPORT_FOLDER, zip_filename)
 
                 with zipfile.ZipFile(zip_path, 'w') as zip_file:
@@ -618,10 +754,11 @@ def batch_badges():
             logger.error(f"Error in batch processing: {e}")
             flash('Error processing batch badges.', 'danger')
 
-    unissued_count = len(get_unissued_members())
-    issued_count = len(get_issued_members())
-
-    return render_template('batch_badges.html', form=form, unissued_count=unissued_count, issued_count=issued_count)
+    return render_template('batch_badges.html', 
+                         form=form, 
+                         unissued_count=unissued_count, 
+                         issued_count=issued_count,
+                         unissued_members=unissued_members[:20])
 
 @app.route('/verify-qr', methods=['GET', 'POST'])
 def verify_qr():
@@ -684,7 +821,7 @@ def export_members():
                 ])
 
             output.seek(0)
-            return send_file(StringIO(output.getvalue()), as_attachment=True, download_name=f"members_{datetime.now().strftime('%Y%m%d')}.csv", mimetype='text/csv')
+            return send_file(StringIO(output.getvalue()), as_attachment=True, download_name=f"members_{datetime.now(timezone.utc).strftime('%Y%m%d')}.csv", mimetype='text/csv')
 
         flash(f'Export format {format_type} not supported yet.', 'warning')
         return redirect(url_for('dashboard'))
@@ -698,8 +835,9 @@ def export_members():
 def health_check():
     return jsonify({
         'status': 'healthy',
-        'timestamp': datetime.now().isoformat(),
+        'timestamp': datetime.now(timezone.utc).isoformat(),
         'group': Config.GROUP_NAME,
+        'official_name': 'BBS (Busia Bodaboda SACCO)',
         'features': {
             'badge_generation': True,
             'qr_codes': True,

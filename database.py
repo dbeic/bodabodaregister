@@ -4,6 +4,7 @@ Database connection and operations module with authentication support
 import os
 import psycopg
 import logging
+import time
 from contextlib import contextmanager
 from config import Config
 from flask_bcrypt import Bcrypt
@@ -16,10 +17,12 @@ logger = logging.getLogger(__name__)
 bcrypt = Bcrypt()
 
 class Database:
-    """Database connection manager"""
+    """Database connection manager with connection retry logic"""
     
     _instance = None
     _conn = None
+    _max_retries = 3
+    _retry_delay = 1
     
     def __new__(cls):
         if cls._instance is None:
@@ -30,49 +33,96 @@ class Database:
         self._conn = None
     
     def get_connection(self):
-        """Get a database connection"""
+        """Get a database connection with retry logic"""
         if self._conn is None or self._conn.closed:
-            try:
-                self._conn = psycopg.connect(Config.DATABASE_URL)
-                logger.info("Database connection established")
-            except Exception as e:
-                logger.error(f"Failed to connect to database: {e}")
-                raise
+            for attempt in range(self._max_retries):
+                try:
+                    # Ensure SSL mode is set for Neon.tech
+                    conn_string = Config.DATABASE_URL
+                    if 'sslmode' not in conn_string:
+                        conn_string += '?sslmode=require' if '?' not in conn_string else '&sslmode=require'
+                    
+                    self._conn = psycopg.connect(conn_string)
+                    logger.info("Database connection established")
+                    return self._conn
+                except Exception as e:
+                    logger.warning(f"Database connection attempt {attempt + 1} failed: {e}")
+                    if attempt < self._max_retries - 1:
+                        time.sleep(self._retry_delay)
+                    else:
+                        logger.error(f"Failed to connect to database: {e}")
+                        raise
         return self._conn
+    
+    def close_connection(self):
+        """Close database connection"""
+        if self._conn and not self._conn.closed:
+            self._conn.close()
+            self._conn = None
+            logger.info("Database connection closed")
     
     @contextmanager
     def get_cursor(self):
-        """Get a cursor from a connection"""
-        conn = self.get_connection()
-        cur = conn.cursor()
+        """Get a cursor from a connection with connection check"""
+        conn = None
         try:
+            # Get connection with retry
+            conn = self.get_connection()
+            
+            # Check if connection is still alive
+            if conn.closed:
+                self._conn = None
+                conn = self.get_connection()
+            
+            cur = conn.cursor()
             yield cur
             conn.commit()
         except Exception as e:
-            conn.rollback()
+            if conn:
+                try:
+                    conn.rollback()
+                except:
+                    pass
             logger.error(f"Database operation error: {e}")
             raise
         finally:
-            cur.close()
+            if cur:
+                try:
+                    cur.close()
+                except:
+                    pass
     
     def execute_query(self, query, params=None, fetch_one=False, fetch_all=False):
-        """Execute a query and return results"""
-        with self.get_cursor() as cur:
-            cur.execute(query, params or ())
-            if fetch_one:
-                result = cur.fetchone()
-                if result:
-                    columns = [desc[0] for desc in cur.description]
-                    return dict(zip(columns, result))
-                return None
-            elif fetch_all:
-                results = cur.fetchall()
-                if results:
-                    columns = [desc[0] for desc in cur.description]
-                    return [dict(zip(columns, row)) for row in results]
-                return []
-            else:
-                return cur.rowcount
+        """Execute a query and return results with retry logic"""
+        for attempt in range(self._max_retries):
+            try:
+                with self.get_cursor() as cur:
+                    cur.execute(query, params or ())
+                    if fetch_one:
+                        result = cur.fetchone()
+                        if result:
+                            columns = [desc[0] for desc in cur.description]
+                            return dict(zip(columns, result))
+                        return None
+                    elif fetch_all:
+                        results = cur.fetchall()
+                        if results:
+                            columns = [desc[0] for desc in cur.description]
+                            return [dict(zip(columns, row)) for row in results]
+                        return []
+                    else:
+                        return cur.rowcount
+            except (psycopg.OperationalError, psycopg.InterfaceError) as e:
+                logger.warning(f"Query attempt {attempt + 1} failed: {e}")
+                # Close connection to force reconnection
+                self.close_connection()
+                if attempt < self._max_retries - 1:
+                    time.sleep(self._retry_delay)
+                    continue
+                raise
+            except Exception as e:
+                logger.error(f"Query execution error: {e}")
+                raise
 
 db = Database()
 
@@ -437,4 +487,8 @@ def get_admin_count():
     return result['count'] if result else 0
 
 # Initialize database on module import
-init_database()
+try:
+    init_database()
+except Exception as e:
+    logger.error(f"Database initialization failed: {e}")
+    # Continue anyway - tables might already exist

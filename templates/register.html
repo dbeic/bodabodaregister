@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Register Member - Bodaboda SACCO{% endblock %}
+{% block title %}Register Member - BBS (Busia Bodaboda SACCO){% endblock %}
 
 {% block extra_css %}
 <style>
@@ -17,6 +17,7 @@
         max-width: 400px;
         border-radius: 10px;
         display: none;
+        background: #000;
     }
     
     #canvas {
@@ -33,6 +34,8 @@
         border-radius: 10px;
         margin: 10px auto;
         display: block;
+        border: 2px solid var(--gold);
+        object-fit: cover;
     }
     
     .form-section {
@@ -56,6 +59,19 @@
         color: var(--gold);
         margin-right: 10px;
     }
+    
+    .photo-status {
+        font-size: 0.9rem;
+        margin-top: 5px;
+    }
+    
+    .photo-status .text-success {
+        color: #28a745 !important;
+    }
+    
+    .photo-status .text-danger {
+        color: #dc3545 !important;
+    }
 </style>
 {% endblock %}
 
@@ -65,14 +81,17 @@
         <div class="col-12">
             <h2 class="mb-4">
                 <i class="fas fa-user-plus text-gold"></i>
-                Register New Member
+                Register New Member - BBS (Busia Bodaboda SACCO)
             </h2>
-            <p class="text-muted">Fill in the details below to register a new bodaboda member.</p>
+            <p class="text-muted">Fill in the details below to register a new bodaboda member. You can upload a photo or capture one using your camera.</p>
         </div>
     </div>
 
     <form method="POST" enctype="multipart/form-data" id="registerForm" novalidate>
         {{ form.hidden_tag() }}
+        
+        <!-- Hidden field for camera capture data -->
+        <input type="hidden" name="camera_photo_data" id="camera_photo_data">
         
         <!-- Personal Details -->
         <div class="form-section">
@@ -167,9 +186,11 @@
             <div class="row">
                 <div class="col-md-6">
                     <div class="mb-3">
-                        <label for="passport_photo" class="form-label required">Upload Photo</label>
+                        <label for="passport_photo" class="form-label">Upload Photo</label>
                         <input type="file" class="form-control" id="passport_photo" name="passport_photo" accept="image/*">
                         <small class="text-muted">Supported formats: JPG, JPEG, PNG (Max 16MB)</small>
+                        <div id="photoPreview"></div>
+                        <div id="photoStatus" class="photo-status"></div>
                     </div>
                 </div>
                 <div class="col-md-6">
@@ -181,7 +202,7 @@
                         <div class="capture-area">
                             <video id="video" autoplay playsinline></video>
                             <canvas id="canvas"></canvas>
-                            <div id="photoPreview"></div>
+                            <div id="cameraPreview"></div>
                         </div>
                         <button type="button" class="btn btn-success mt-2" id="capturePhoto" style="display:none;">
                             <i class="fas fa-camera"></i> Capture Photo
@@ -189,6 +210,7 @@
                         <button type="button" class="btn btn-danger mt-2" id="closeCamera" style="display:none;">
                             <i class="fas fa-times"></i> Close Camera
                         </button>
+                        <div id="cameraStatus" class="photo-status mt-2"></div>
                     </div>
                 </div>
             </div>
@@ -224,54 +246,65 @@ document.addEventListener('DOMContentLoaded', function() {
     const openCameraBtn = document.getElementById('openCamera');
     const captureBtn = document.getElementById('capturePhoto');
     const closeBtn = document.getElementById('closeCamera');
+    const cameraPreview = document.getElementById('cameraPreview');
+    const cameraStatus = document.getElementById('cameraStatus');
     const photoPreview = document.getElementById('photoPreview');
+    const photoStatus = document.getElementById('photoStatus');
     const fileInput = document.getElementById('passport_photo');
+    const cameraPhotoData = document.getElementById('camera_photo_data');
     let stream = null;
+    let capturedPhotoData = null;
 
+    // Open camera
     openCameraBtn.addEventListener('click', async function() {
         try {
             stream = await navigator.mediaDevices.getUserMedia({ 
-                video: { facingMode: 'user' } 
+                video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } } 
             });
             video.srcObject = stream;
             video.style.display = 'block';
             captureBtn.style.display = 'inline-block';
             closeBtn.style.display = 'inline-block';
             openCameraBtn.style.display = 'none';
+            cameraStatus.innerHTML = '<span class="text-success"><i class="fas fa-check-circle"></i> Camera active</span>';
         } catch (err) {
             alert('Unable to access camera. Please upload a photo instead.');
             console.error('Camera error:', err);
+            cameraStatus.innerHTML = '<span class="text-danger"><i class="fas fa-times-circle"></i> Camera access denied</span>';
         }
     });
 
+    // Capture photo from camera
     captureBtn.addEventListener('click', function() {
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        canvas.getContext('2d').drawImage(video, 0, 0);
+        // Set canvas to video dimensions
+        canvas.width = video.videoWidth || 640;
+        canvas.height = video.videoHeight || 480;
+        const ctx = canvas.getContext('2d');
         
-        // Convert to blob
-        canvas.toBlob(function(blob) {
-            // Create File object
-            const file = new File([blob], 'passport_photo.jpg', { type: 'image/jpeg' });
-            const dataTransfer = new DataTransfer();
-            dataTransfer.items.add(file);
-            fileInput.files = dataTransfer.files;
-            
-            // Show preview
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                photoPreview.innerHTML = `
-                    <img src="${e.target.result}" class="photo-preview" alt="Captured photo">
-                    <p class="text-success mt-1"><i class="fas fa-check-circle"></i> Photo captured</p>
-                `;
-            };
-            reader.readAsDataURL(file);
-            
-            // Close camera
-            closeCamera();
-        }, 'image/jpeg', 0.95);
+        // Draw video frame to canvas
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        
+        // Convert to base64
+        const imageData = canvas.toDataURL('image/jpeg', 0.95);
+        capturedPhotoData = imageData;
+        cameraPhotoData.value = imageData;
+        
+        // Show preview
+        cameraPreview.innerHTML = `
+            <img src="${imageData}" class="photo-preview" alt="Captured photo">
+        `;
+        cameraStatus.innerHTML = '<span class="text-success"><i class="fas fa-check-circle"></i> Photo captured! Ready to register.</span>';
+        
+        // Clear any uploaded file selection
+        fileInput.value = '';
+        photoPreview.innerHTML = '';
+        photoStatus.innerHTML = '';
+        
+        // Close camera after capture
+        closeCamera();
     });
 
+    // Close camera
     closeBtn.addEventListener('click', closeCamera);
 
     function closeCamera() {
@@ -280,23 +313,46 @@ document.addEventListener('DOMContentLoaded', function() {
             stream = null;
         }
         video.style.display = 'none';
+        video.srcObject = null;
         captureBtn.style.display = 'none';
         closeBtn.style.display = 'none';
         openCameraBtn.style.display = 'inline-block';
+        cameraStatus.innerHTML = '';
     }
 
     // Photo preview for file upload
     fileInput.addEventListener('change', function(e) {
         const file = this.files[0];
         if (file) {
+            // Clear camera capture
+            capturedPhotoData = null;
+            cameraPhotoData.value = '';
+            cameraPreview.innerHTML = '';
+            cameraStatus.innerHTML = '';
+            
             const reader = new FileReader();
             reader.onload = function(e) {
                 photoPreview.innerHTML = `
                     <img src="${e.target.result}" class="photo-preview" alt="Uploaded photo">
-                    <p class="text-success mt-1"><i class="fas fa-check-circle"></i> Photo uploaded</p>
                 `;
+                photoStatus.innerHTML = '<span class="text-success"><i class="fas fa-check-circle"></i> Photo uploaded successfully</span>';
             };
             reader.readAsDataURL(file);
+        } else {
+            photoPreview.innerHTML = '';
+            photoStatus.innerHTML = '';
+        }
+    });
+
+    // Form submit validation - ensure either photo uploaded or captured
+    form.addEventListener('submit', function(e) {
+        const hasFile = fileInput.files.length > 0;
+        const hasCamera = capturedPhotoData !== null;
+        
+        if (!hasFile && !hasCamera) {
+            e.preventDefault();
+            alert('Please upload a photo or capture one using the camera.');
+            return false;
         }
     });
 });

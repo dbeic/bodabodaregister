@@ -5,7 +5,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageEnhance, ImageOps
 import os
 import logging
 import math
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from config import Config
 from .qr_generator import QRGenerator
 
@@ -58,7 +58,7 @@ class BadgeGenerator:
             except:
                 micro_font = ImageFont.load_default()
             
-            microtext = "BUSIA BODABODA SACCO • MEMBER ID • " * 20
+            microtext = "BBS BUSIA BODABODA SACCO • MEMBER ID • " * 20
             for i in range(0, height, 18):
                 draw.text((5, i), microtext[:width//10], fill=(150, 20, 20, 80), font=micro_font)
             
@@ -173,26 +173,27 @@ class BadgeGenerator:
                     logger.warning(f"Could not load logo {logo_file}: {e}")
             
             # ============================================================
-            # HEADER TEXT - PROFESSIONAL TYPOGRAPHY
+            # HEADER TEXT - PROFESSIONAL TYPOGRAPHY with official name
             # ============================================================
-            draw.text((offset_x + 30, offset_y + 22), "BODABODA", 
+            draw.text((offset_x + 30, offset_y + 22), "BBS", 
                      fill=(255, 255, 255), font=title_font, anchor='lt')
-            draw.text((offset_x + 30, offset_y + 58), "IDENTIFICATION CARD", 
+            draw.text((offset_x + 30, offset_y + 58), "BUSIA BODABODA SACCO", 
                      fill=(255, 215, 0), font=header_font, anchor='lt')
             
             # ============================================================
             # LEFT COLUMN: PASSPORT PHOTO (TOP) + QR CODE (BOTTOM)
             # ============================================================
             
-            # --- PASSPORT PHOTO SECTION (with orientation fix from code 2) ---
+            # --- PASSPORT PHOTO SECTION (with orientation fix) ---
             photo_available = False
             if member_data.get('passport_photo'):
                 photo_path = os.path.join(Config.UPLOAD_FOLDER, member_data['passport_photo'])
                 if os.path.exists(photo_path):
                     try:
                         photo = Image.open(photo_path)
-                        # Rotate 90 degrees anticlockwise to fix portrait orientation
-                        photo = photo.rotate(90, expand=True)
+                        # Normalize orientation using EXIF
+                        from .image_processor import ImageProcessor
+                        photo = ImageProcessor.normalize_orientation(photo)
                         
                         # Target dimensions for rectangular photo
                         target_width = 240
@@ -330,19 +331,30 @@ class BadgeGenerator:
                 y_pos += line_height
             
             # ============================================================
-            # FOOTER - ISSUE DATE, EXPIRY, SERIAL (Bottom right)
+            # FOOTER - ISSUE DATE, EXPIRY (5 years from issue), SERIAL
             # ============================================================
-            issue_date = member_data.get('date_registered', datetime.now().strftime('%Y-%m-%d'))
-            if isinstance(issue_date, datetime):
-                issue_date = issue_date.strftime('%Y-%m-%d')
+            # Get issue date - use stored date_registered or current time
+            issue_date_str = member_data.get('date_registered')
+            if issue_date_str:
+                try:
+                    if isinstance(issue_date_str, datetime):
+                        issue_dt = issue_date_str
+                    else:
+                        issue_dt = datetime.strptime(issue_date_str, '%Y-%m-%d')
+                except:
+                    issue_dt = datetime.now(timezone.utc)
+            else:
+                issue_dt = datetime.now(timezone.utc)
             
-            # Expiry date (5 years from issue)
-            try:
-                issue_dt = datetime.strptime(issue_date, '%Y-%m-%d')
-                expiry_dt = issue_dt.replace(year=issue_dt.year + 5)
-                expiry_date = expiry_dt.strftime('%Y-%m-%d')
-            except:
-                expiry_date = '31 Dec 2027'
+            # If issue_dt is naive, make it aware
+            if issue_dt.tzinfo is None:
+                issue_dt = issue_dt.replace(tzinfo=timezone.utc)
+            
+            # Expiry date: exactly 5 years after issue date
+            expiry_dt = issue_dt.replace(year=issue_dt.year + 5)
+            
+            issue_date = issue_dt.strftime('%Y-%m-%d')
+            expiry_date = expiry_dt.strftime('%Y-%m-%d')
             
             # Footer section (bottom of right column)
             footer_y_start = height - offset_y - 105
@@ -355,17 +367,17 @@ class BadgeGenerator:
             draw.text((x_start, footer_y_start), f"Issued: {issue_date}", 
                      fill=(255, 255, 255), font=small_font)
             
-            # Expiry
+            # Expiry (5 years from issue)
             draw.text((x_start + 260, footer_y_start), f"Expires: {expiry_date}", 
                      fill=(255, 255, 255), font=small_font)
             
             # Serial Number (security feature)
-            serial = f"BSB-{member_data.get('member_number', '0000')}-{datetime.now().year}"
+            serial = f"BBS-{member_data.get('member_number', '0000')}-{issue_dt.year}"
             draw.text((x_start, footer_y_start + 32), f"Serial: {serial}", 
                      fill=(255, 255, 255), font=small_font)
             
-            # Group Name
-            draw.text((x_start + 260, footer_y_start + 32), f"{Config.GROUP_NAME}", 
+            # Group Name with official name
+            draw.text((x_start + 260, footer_y_start + 32), "BBS (Busia Bodaboda SACCO)", 
                      fill=(255, 255, 255), font=small_font)
             
             # ============================================================
@@ -381,7 +393,7 @@ class BadgeGenerator:
             if watermark and Config.SHOW_WATERMARK:
                 watermark_img = Image.new('RGBA', img.size, (0, 0, 0, 0))
                 watermark_draw = ImageDraw.Draw(watermark_img)
-                watermark_text = "BUSIA BODABODA SACCO"
+                watermark_text = "BBS BUSIA BODABODA SACCO"
                 for i in range(-height, height, 130):
                     watermark_draw.text((i, i), watermark_text, 
                                       fill=(255, 255, 255, 15),
@@ -477,9 +489,10 @@ class BadgeGenerator:
                 else:
                     c.drawImage(img, 0, 0, width=page_size[0], height=page_size[1])
             
+            now = datetime.now(timezone.utc)
             c.setFont("Helvetica", 8)
             c.setFillColorRGB(0.5, 0.5, 0.5)
-            c.drawString(10, 10, f"Printed: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+            c.drawString(10, 10, f"Printed: {now.strftime('%Y-%m-%d %H:%M')}")
             c.drawString(10, 5, f"Member: {member_data['member_number']}")
             
             c.save()
