@@ -1,5 +1,5 @@
 """
-QR Code generation module with PIN-protected data
+QR Code generation module with enhanced styling
 """
 import qrcode
 from qrcode.image.styledpil import StyledPilImage
@@ -7,102 +7,39 @@ from qrcode.image.styles.moduledrawers import RoundedModuleDrawer
 from qrcode.image.styles.colormasks import RadialGradiantColorMask
 import os
 import logging
-import json
-import base64
-from cryptography.fernet import Fernet
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+import uuid
 from PIL import Image, ImageDraw
 from config import Config
 
 logger = logging.getLogger(__name__)
 
 class QRGenerator:
-    """QR Code generator for member badges with PIN protection"""
-    
-    # Secret key for encryption (should be in environment in production)
-    _encryption_salt = b'qr_pin_salt_bbs_2026'
+    """QR Code generator for member badges"""
     
     @staticmethod
-    def _derive_key(pin, salt=None):
-        """Derive encryption key from PIN"""
-        if salt is None:
-            salt = QRGenerator._encryption_salt
-        
-        kdf = PBKDF2HMAC(
-            algorithm=hashes.SHA256(),
-            length=32,
-            salt=salt,
-            iterations=100000,
-        )
-        key = base64.urlsafe_b64encode(kdf.derive(pin.encode()))
-        return key
-    
-    @staticmethod
-    def encrypt_data(data, pin):
-        """Encrypt QR data with PIN"""
-        try:
-            key = QRGenerator._derive_key(pin)
-            cipher = Fernet(key)
-            encrypted = cipher.encrypt(json.dumps(data).encode())
-            return base64.urlsafe_b64encode(encrypted).decode()
-        except Exception as e:
-            logger.error(f"Error encrypting QR data: {e}")
-            raise
-    
-    @staticmethod
-    def decrypt_data(encrypted_data, pin):
-        """Decrypt QR data with PIN"""
-        try:
-            key = QRGenerator._derive_key(pin)
-            cipher = Fernet(key)
-            decrypted = cipher.decrypt(base64.urlsafe_b64decode(encrypted_data))
-            return json.loads(decrypted.decode())
-        except Exception as e:
-            logger.error(f"Error decrypting QR data: {e}")
-            raise
-    
-    @staticmethod
-    def generate_qr(member_data, include_photo=False, pin=None):
+    def generate_qr(member_data, include_photo=False):
         """
-        Generate QR code for member with PIN-protected data
+        Generate QR code for member with enhanced styling
+        Now generates a secure token that references the member, not containing personal data
         
         Args:
             member_data: Dictionary containing member information
             include_photo: Whether to include member photo in QR center
-            pin: PIN for encrypting QR data (if None, data is not encrypted)
         
         Returns:
-            tuple: (filepath, filename, encrypted_data)
+            tuple: (filepath, filename)
         """
         try:
-            # Prepare QR data
-            qr_data_payload = {
-                'member': member_data['member_number'],
-                'name': member_data['full_name'],
-                'id': member_data['national_id'],
-                'phone': member_data['telephone'],
-                'group': member_data.get('group_stage_name', ''),
-                'chairman': member_data.get('chairman_name', ''),
-                'issued': member_data.get('badge_issued', False)
-            }
+            # Generate a unique token for this member
+            # This token will be used to look up the member in the database
+            member_number = member_data['member_number']
             
-            # Encrypt data if PIN is provided
-            if pin:
-                encrypted_data = QRGenerator.encrypt_data(qr_data_payload, pin)
-                qr_data = f"BBSQR:{encrypted_data}"
-            else:
-                # Fallback: embed data directly (for backward compatibility)
-                qr_data = (
-                    f"Member: {member_data['member_number']}\n"
-                    f"Name: {member_data['full_name']}\n"
-                    f"ID: {member_data['national_id']}\n"
-                    f"Phone: {member_data['telephone']}\n"
-                    f"Group: {member_data['group_stage_name']}\n"
-                    f"Chairman: {member_data['chairman_name']}\n"
-                    f"Verified: {member_data.get('badge_issued', False)}"
-                )
-                encrypted_data = None
+            # Create a secure token that references the member
+            # Format: BBS-{member_number}-{uuid_short}
+            token_id = f"BBS-{member_number}-{uuid.uuid4().hex[:8].upper()}"
+            
+            # Store the token in the member data for reference
+            qr_data = token_id
             
             # Generate QR code with high error correction
             qr = qrcode.QRCode(
@@ -114,7 +51,7 @@ class QRGenerator:
             qr.add_data(qr_data)
             qr.make(fit=True)
             
-            # Create styled QR image
+            # Create styled QR image with gradient
             img = qr.make_image(
                 image_factory=StyledPilImage,
                 module_drawer=RoundedModuleDrawer(radius_ratio=0.5),
@@ -131,13 +68,17 @@ class QRGenerator:
                     photo_path = os.path.join(Config.UPLOAD_FOLDER, member_data['passport_photo'])
                     if os.path.exists(photo_path):
                         photo = Image.open(photo_path)
+                        from .image_processor import ImageProcessor
+                        photo = ImageProcessor.normalize_orientation(photo)
                         photo_size = 40
                         photo = photo.resize((photo_size, photo_size), Image.LANCZOS)
                         
+                        # Create circular photo
                         mask = Image.new('L', (photo_size, photo_size), 0)
                         mask_draw = ImageDraw.Draw(mask)
                         mask_draw.ellipse((0, 0, photo_size, photo_size), fill=255)
                         
+                        # Center the photo on QR
                         qr_size = img.size[0]
                         center = qr_size // 2
                         offset = photo_size // 2
@@ -145,67 +86,42 @@ class QRGenerator:
                 except Exception as e:
                     logger.warning(f"Could not add photo to QR: {e}")
             
-            # Add PIN indicator if encrypted
-            if pin:
-                draw = ImageDraw.Draw(img)
-                try:
-                    small_font = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf", 12)
-                except:
-                    small_font = ImageFont.load_default()
-                draw.text((10, img.size[1] - 20), "🔒 PIN Protected", fill=(255, 255, 255), font=small_font)
-            
             # Save QR code
             filename = f"qr_{member_data['member_number']}.png"
             filepath = os.path.join(Config.QR_FOLDER, filename)
             img.save(filepath, 'PNG', quality=95)
             
-            logger.info(f"QR code generated for member: {member_data['member_number']}")
-            return filepath, filename, encrypted_data
+            logger.info(f"QR code generated for member: {member_data['member_number']} with token: {token_id}")
+            return filepath, filename
             
         except Exception as e:
             logger.error(f"Error generating QR code: {e}")
             raise
     
     @staticmethod
-    def decrypt_qr_data(qr_content, pin):
-        """
-        Decrypt QR data from QR code content
-        
-        Args:
-            qr_content: The scanned QR code content
-            pin: The PIN provided by the user
-        
-        Returns:
-            dict: Decrypted member data
-        """
-        try:
-            if qr_content.startswith('BBSQR:'):
-                encrypted_part = qr_content[6:]  # Remove 'BBSQR:' prefix
-                return QRGenerator.decrypt_data(encrypted_part, pin)
-            else:
-                # Legacy format - parse directly
-                data = {}
-                for line in qr_content.split('\n'):
-                    if ':' in line:
-                        key, value = line.split(':', 1)
-                        data[key.strip().lower()] = value.strip()
-                return data
-        except Exception as e:
-            logger.error(f"Error decrypting QR data: {e}")
-            raise ValueError("Invalid PIN or corrupted QR data")
+    def generate_qr_verification_data(member):
+        """Generate QR verification data - now returns the token"""
+        return {
+            'member_number': member['member_number'],
+            'full_name': member['full_name'],
+            'national_id': member['national_id'],
+            'telephone': member['telephone'],
+            'group': member['group_stage_name'],
+            'issued': member.get('badge_issued', False),
+            'has_pin': member.get('qr_pin_hash') is not None
+        }
     
     @staticmethod
-    def generate_bulk_qr(members, pin=None):
+    def generate_bulk_qr(members):
         """Generate QR codes for multiple members"""
         results = []
         for member in members:
             try:
-                qr_path, qr_filename, encrypted = QRGenerator.generate_qr(member, pin=pin)
+                qr_path, qr_filename = QRGenerator.generate_qr(member)
                 results.append({
                     'member_number': member['member_number'],
                     'qr_path': qr_path,
                     'qr_filename': qr_filename,
-                    'encrypted': encrypted is not None,
                     'success': True
                 })
             except Exception as e:

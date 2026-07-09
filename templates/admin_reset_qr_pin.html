@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+
+{% block title %}Admin Reset QR PIN - BBS (Busia Bodaboda SACCO){% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header bg-warning">
+                    <h5 class="mb-0 text-dark">
+                        <i class="fas fa-user-shield me-2"></i>
+                        Admin QR PIN Reset
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-warning">
+                        <i class="fas fa-exclamation-triangle me-2"></i>
+                        <strong>Admin Action Required</strong>
+                        <p class="mb-0 mt-1">You are about to reset the QR PIN for: <strong>{{ member.full_name }}</strong></p>
+                    </div>
+                    
+                    <form method="POST">
+                        {{ form.hidden_tag() }}
+                        {{ form.member_id() }}
+                        
+                        <div class="mb-3">
+                            <label for="admin_password" class="form-label required">Admin Password</label>
+                            <input type="password" class="form-control" id="admin_password" name="admin_password" 
+                                   placeholder="Enter your admin password" required>
+                            <div class="form-text">
+                                <i class="fas fa-info-circle me-1"></i>
+                                Enter your admin password to authorize this action
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="new_pin" class="form-label required">New PIN</label>
+                            <input type="password" class="form-control" id="new_pin" name="new_pin" 
+                                   placeholder="Enter new 4-digit PIN" maxlength="4" pattern="[0-9]{4}" required>
+                            <div class="form-text">
+                                <i class="fas fa-info-circle me-1"></i>
+                                Set a new 4-digit PIN for the member
+                            </div>
+                        </div>
+                        
+                        <div class="alert alert-danger">
+                            <i class="fas fa-exclamation-circle me-2"></i>
+                            <strong>Warning:</strong>
+                            <ul class="mb-0 mt-1">
+                                <li>This action will reset the member's QR PIN</li>
+                                <li>The member will need to use the new PIN</li>
+                                <li>This action is logged for audit purposes</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-danger">
+                                <i class="fas fa-sync me-2"></i>Reset PIN
+                            </button>
+                            <a href="{{ url_for('view_badge', member_id=member.id) }}" class="btn btn-outline-secondary">
+                                <i class="fas fa-arrow-left me-2"></i>Cancel
+                            </a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .text-gold {
+        color: var(--gold);
+    }
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // PIN input - only allow numbers
+    document.getElementById('new_pin').addEventListener('input', function() {
+        this.value = this.value.replace(/[^0-9]/g, '').slice(0, 4);
+    });
+});
+</script>
+{% endblock %}

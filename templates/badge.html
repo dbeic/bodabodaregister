@@ -63,16 +63,6 @@
                                     </td>
                                 </tr>
                                 <tr>
-                                    <td><strong>QR PIN:</strong></td>
-                                    <td>
-                                        {% if has_pin %}
-                                            <span class="badge bg-info"><i class="fas fa-lock me-1"></i> Set</span>
-                                        {% else %}
-                                            <span class="badge bg-warning">Not Set</span>
-                                        {% endif %}
-                                    </td>
-                                </tr>
-                                <tr>
                                     <td><strong>Issued Date:</strong></td>
                                     <td>{{ member.badge_issued_date|datetime if member.badge_issued_date else 'Not issued' }}</td>
                                 </tr>
@@ -83,6 +73,16 @@
                                 <tr>
                                     <td><strong>Last Printed:</strong></td>
                                     <td>{{ member.last_printed|datetime if member.last_printed else 'Never' }}</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>QR PIN:</strong></td>
+                                    <td>
+                                        {% if has_pin %}
+                                            <span class="badge bg-success"><i class="fas fa-lock"></i> Protected</span>
+                                        {% else %}
+                                            <span class="badge bg-secondary"><i class="fas fa-unlock"></i> Not Set</span>
+                                        {% endif %}
+                                    </td>
                                 </tr>
                             </table>
                         </div>
@@ -106,24 +106,20 @@
                                 <a href="{{ url_for('regenerate_badge', member_id=member.id) }}" class="btn btn-outline-warning">
                                     <i class="fas fa-sync me-2"></i>Regenerate
                                 </a>
-                                <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary">
-                                    <i class="fas fa-arrow-left me-2"></i>Back
-                                </a>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="row mt-3 no-print">
-                        <div class="col-12">
-                            <h5>QR PIN Management</h5>
-                            <div class="d-flex flex-wrap gap-2">
-                                <a href="{{ url_for('change_qr_pin', member_id=member.id) }}" class="btn btn-outline-info">
-                                    <i class="fas fa-key me-2"></i>Change PIN
-                                </a>
+                                <!-- QR PIN Management -->
+                                {% if has_pin %}
+                                    <a href="{{ url_for('change_qr_pin', member_id=member.id) }}" class="btn btn-outline-info">
+                                        <i class="fas fa-key me-2"></i>Change PIN
+                                    </a>
+                                {% endif %}
                                 {% if current_user.role in ['admin', 'super_admin'] %}
-                                    <a href="{{ url_for('reset_qr_pin', member_id=member.id) }}" class="btn btn-outline-danger">
+                                    <a href="{{ url_for('admin_reset_qr_pin', member_id=member.id) }}" class="btn btn-outline-danger">
                                         <i class="fas fa-user-shield me-2"></i>Admin Reset PIN
                                     </a>
                                 {% endif %}
+                                <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary">
+                                    <i class="fas fa-arrow-left me-2"></i>Back
+                                </a>
                             </div>
                         </div>
                     </div>

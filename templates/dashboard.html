@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Dashboard - Bodaboda SACCO{% endblock %}
+{% block title %}Dashboard - BBS (Busia Bodaboda SACCO){% endblock %}
 
 {% block content %}
 <div class="container py-4">
@@ -36,8 +36,8 @@
         </div>
         <div class="col-md-3">
             <div class="stats-card">
-                <h3 class="stats-number">{{ recent_members|length }}</h3>
-                <p class="stats-label">New This Month</p>
+                <h3 class="stats-number">{{ members_with_pin or 0 }}</h3>
+                <p class="stats-label"><i class="fas fa-lock"></i> PIN Protected</p>
             </div>
         </div>
     </div>
@@ -84,6 +84,7 @@
                                 <th>Group/Stage</th>
                                 <th>Date Registered</th>
                                 <th>Badge</th>
+                                <th>PIN</th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
@@ -100,6 +101,13 @@
                                             <span class="badge bg-success"><i class="fas fa-check-circle"></i> Generated</span>
                                         {% else %}
                                             <span class="badge bg-warning">Pending</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if member.qr_pin_hash %}
+                                            <span class="badge bg-success"><i class="fas fa-lock"></i></span>
+                                        {% else %}
+                                            <span class="badge bg-secondary"><i class="fas fa-unlock"></i></span>
                                         {% endif %}
                                     </td>
                                     <td>

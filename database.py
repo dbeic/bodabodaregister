@@ -37,6 +37,7 @@ class Database:
         if self._conn is None or self._conn.closed:
             for attempt in range(self._max_retries):
                 try:
+                    # Ensure SSL mode is set for Neon.tech
                     conn_string = Config.DATABASE_URL
                     if 'sslmode' not in conn_string:
                         conn_string += '?sslmode=require' if '?' not in conn_string else '&sslmode=require'
@@ -66,7 +67,10 @@ class Database:
         conn = None
         cur = None
         try:
+            # Get connection with retry
             conn = self.get_connection()
+            
+            # Check if connection is still alive
             if conn.closed:
                 self._conn = None
                 conn = self.get_connection()
@@ -111,6 +115,7 @@ class Database:
                         return cur.rowcount
             except (psycopg.OperationalError, psycopg.InterfaceError) as e:
                 logger.warning(f"Query attempt {attempt + 1} failed: {e}")
+                # Close connection to force reconnection
                 self.close_connection()
                 if attempt < self._max_retries - 1:
                     time.sleep(self._retry_delay)
@@ -123,11 +128,11 @@ class Database:
 db = Database()
 
 def init_database():
-    """Initialize database tables with PIN protection support"""
+    """Initialize database tables with issuance tracking and authentication"""
     logger.info("Initializing database tables...")
     
     create_table_sql = """
-    -- Members table with QR PIN support
+    -- Members table
     CREATE TABLE IF NOT EXISTS members (
         id SERIAL PRIMARY KEY,
         member_number VARCHAR(50) UNIQUE NOT NULL,
@@ -143,7 +148,6 @@ def init_database():
         next_of_kin_phone VARCHAR(20),
         date_registered DATE DEFAULT CURRENT_DATE,
         qr_code_data TEXT,
-        qr_pin_hash VARCHAR(200),  -- Hashed PIN for QR code protection
         badge_image VARCHAR(500),
         badge_issued BOOLEAN DEFAULT FALSE,
         badge_issued_date TIMESTAMP,
@@ -152,7 +156,11 @@ def init_database():
         last_printed TIMESTAMP,
         card_type VARCHAR(50) DEFAULT 'standard',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        qr_pin_hash VARCHAR(200) DEFAULT NULL,
+        qr_pin_set_at TIMESTAMP DEFAULT NULL,
+        qr_pin_attempts INTEGER DEFAULT 0,
+        qr_pin_locked_until TIMESTAMP DEFAULT NULL
     );
     
     CREATE INDEX IF NOT EXISTS idx_member_number ON members(member_number);
@@ -161,6 +169,7 @@ def init_database():
     CREATE INDEX IF NOT EXISTS idx_full_name ON members(full_name);
     CREATE INDEX IF NOT EXISTS idx_group_stage ON members(group_stage_name);
     CREATE INDEX IF NOT EXISTS idx_badge_issued ON members(badge_issued);
+    CREATE INDEX IF NOT EXISTS idx_qr_pin_hash ON members(qr_pin_hash);
     
     -- Badge issuance log table
     CREATE TABLE IF NOT EXISTS badge_issuance_log (
@@ -173,14 +182,25 @@ def init_database():
         notes TEXT
     );
     
-    -- QR verification log (tracks PIN attempts)
-    CREATE TABLE IF NOT EXISTS qr_verification_log (
+    -- QR PIN verification log
+    CREATE TABLE IF NOT EXISTS qr_pin_verification_log (
         id SERIAL PRIMARY KEY,
         member_id INTEGER REFERENCES members(id) ON DELETE CASCADE,
+        verified_by VARCHAR(100),
+        verification_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        success BOOLEAN DEFAULT TRUE,
         ip_address VARCHAR(50),
-        user_agent TEXT,
-        success BOOLEAN DEFAULT FALSE,
-        attempt_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        user_agent TEXT
+    );
+    
+    -- QR PIN change log
+    CREATE TABLE IF NOT EXISTS qr_pin_change_log (
+        id SERIAL PRIMARY KEY,
+        member_id INTEGER REFERENCES members(id) ON DELETE CASCADE,
+        changed_by VARCHAR(100),
+        change_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        change_type VARCHAR(20),
+        notes TEXT
     );
     
     -- Admins table
@@ -217,15 +237,6 @@ def init_database():
         used BOOLEAN DEFAULT FALSE
     );
     
-    -- QR PIN reset log
-    CREATE TABLE IF NOT EXISTS qr_pin_reset_log (
-        id SERIAL PRIMARY KEY,
-        member_id INTEGER REFERENCES members(id) ON DELETE CASCADE,
-        reset_by VARCHAR(100),
-        reset_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        reason TEXT
-    );
-    
     CREATE INDEX IF NOT EXISTS idx_admins_username ON admins(username);
     CREATE INDEX IF NOT EXISTS idx_admins_email ON admins(email);
     CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_token ON password_reset_tokens(token);
@@ -236,17 +247,8 @@ def init_database():
             cur.execute(create_table_sql)
             logger.info("Database tables created successfully")
             
-            # Check if qr_pin_hash column exists, add if not
-            cur.execute("""
-                SELECT column_name 
-                FROM information_schema.columns 
-                WHERE table_name = 'members' AND column_name = 'qr_pin_hash'
-            """)
-            if not cur.fetchone():
-                cur.execute("ALTER TABLE members ADD COLUMN qr_pin_hash VARCHAR(200)")
-                logger.info("Added qr_pin_hash column to members table")
-            
-            # Create default admin user
+            # Create default admin user with proper password hash
+            # Password: Admin@2024
             password_hash = bcrypt.generate_password_hash('Admin@2024').decode('utf-8')
             
             cur.execute("""
@@ -272,15 +274,17 @@ def create_member(data):
         passport_photo, group_stage_name, chairman_name,
         chairman_phone, motorcycle_registration,
         next_of_kin_name, next_of_kin_phone,
-        date_registered, qr_code_data, qr_pin_hash, badge_image,
-        badge_issued, badge_issued_date, badge_issued_by
+        date_registered, qr_code_data, badge_image,
+        badge_issued, badge_issued_date, badge_issued_by,
+        qr_pin_hash, qr_pin_set_at
     ) VALUES (
         %s, %s, %s, %s,
         %s, %s, %s,
         %s, %s,
         %s, %s,
-        %s, %s, %s, %s,
-        %s, %s, %s
+        %s, %s, %s,
+        %s, %s, %s,
+        %s, %s
     ) RETURNING id;
     """
     with db.get_cursor() as cur:
@@ -298,11 +302,12 @@ def create_member(data):
             data.get('next_of_kin_phone'),
             data.get('date_registered'),
             data.get('qr_code_data'),
-            data.get('qr_pin_hash'),
             data.get('badge_image'),
             data.get('badge_issued', False),
             data.get('badge_issued_date'),
-            data.get('badge_issued_by')
+            data.get('badge_issued_by'),
+            data.get('qr_pin_hash'),
+            data.get('qr_pin_set_at')
         ))
         return cur.fetchone()[0]
 
@@ -321,6 +326,10 @@ def get_member_by_national_id(national_id):
 def get_member_by_telephone(telephone):
     query = "SELECT * FROM members WHERE telephone = %s"
     return db.execute_query(query, (telephone,), fetch_one=True)
+
+def get_member_by_qr_token(qr_token):
+    query = "SELECT * FROM members WHERE qr_code_data = %s"
+    return db.execute_query(query, (qr_token,), fetch_one=True)
 
 def get_all_members(limit=50, offset=0, search=None):
     query = "SELECT * FROM members"
@@ -352,23 +361,10 @@ def update_member(member_id, data):
     set_clauses = []
     values = []
     
-    allowed_fields = [
-        'member_number', 'full_name', 'national_id', 'telephone',
-        'passport_photo', 'group_stage_name', 'chairman_name',
-        'chairman_phone', 'motorcycle_registration',
-        'next_of_kin_name', 'next_of_kin_phone',
-        'qr_code_data', 'qr_pin_hash', 'badge_image',
-        'badge_issued', 'badge_issued_date', 'badge_issued_by',
-        'badge_print_count', 'last_printed'
-    ]
-    
     for key, value in data.items():
-        if key in allowed_fields and value is not None:
+        if value is not None:
             set_clauses.append(f"{key} = %s")
             values.append(value)
-    
-    if not set_clauses:
-        return None
     
     values.append(member_id)
     query = f"""
@@ -432,9 +428,16 @@ def get_issued_members(limit=None):
 
 def set_qr_pin(member_id, pin_hash):
     """Set or update QR PIN for a member"""
-    query = "UPDATE members SET qr_pin_hash = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s RETURNING id"
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    query = """
+    UPDATE members 
+    SET qr_pin_hash = %s, qr_pin_set_at = %s, qr_pin_attempts = 0, qr_pin_locked_until = NULL, updated_at = %s
+    WHERE id = %s
+    RETURNING id
+    """
     with db.get_cursor() as cur:
-        cur.execute(query, (pin_hash, member_id))
+        cur.execute(query, (pin_hash, now, now, member_id))
         result = cur.fetchone()
         return result[0] if result else None
 
@@ -442,27 +445,74 @@ def get_qr_pin_hash(member_id):
     """Get QR PIN hash for a member"""
     query = "SELECT qr_pin_hash FROM members WHERE id = %s"
     result = db.execute_query(query, (member_id,), fetch_one=True)
-    return result.get('qr_pin_hash') if result else None
+    return result['qr_pin_hash'] if result else None
 
-def log_qr_verification(member_id, ip_address, user_agent, success):
-    """Log QR verification attempt"""
+def verify_qr_pin(member_id, pin, bcrypt_instance):
+    """Verify QR PIN for a member with attempt tracking"""
+    from datetime import datetime, timezone, timedelta
+    
+    member = get_member(member_id)
+    if not member:
+        return {'success': False, 'error': 'Member not found'}
+    
+    # Check if locked
+    if member.get('qr_pin_locked_until'):
+        lock_time = member['qr_pin_locked_until']
+        if lock_time and lock_time > datetime.now(timezone.utc):
+            remaining = (lock_time - datetime.now(timezone.utc)).seconds
+            return {'success': False, 'error': f'Account locked. Try again in {remaining} seconds'}
+    
+    pin_hash = member.get('qr_pin_hash')
+    if not pin_hash:
+        return {'success': False, 'error': 'No PIN set for this member'}
+    
+    # Verify PIN
+    if bcrypt_instance.check_password_hash(pin_hash, str(pin)):
+        # Reset attempts on success
+        update_member(member_id, {'qr_pin_attempts': 0, 'qr_pin_locked_until': None})
+        return {'success': True}
+    else:
+        # Increment attempts
+        attempts = member.get('qr_pin_attempts', 0) + 1
+        update_data = {'qr_pin_attempts': attempts}
+        
+        # Lock after 5 failed attempts (lock for 15 minutes)
+        if attempts >= 5:
+            from datetime import timedelta
+            lock_until = datetime.now(timezone.utc) + timedelta(minutes=15)
+            update_data['qr_pin_locked_until'] = lock_until
+            error_msg = f'Too many failed attempts. Account locked for 15 minutes'
+        else:
+            error_msg = f'Invalid PIN. {5 - attempts} attempts remaining'
+        
+        update_member(member_id, update_data)
+        return {'success': False, 'error': error_msg, 'attempts': attempts}
+
+def log_qr_pin_verification(member_id, verified_by, success, ip_address=None, user_agent=None):
+    """Log QR PIN verification attempt"""
     query = """
-    INSERT INTO qr_verification_log (member_id, ip_address, user_agent, success)
+    INSERT INTO qr_pin_verification_log (member_id, verified_by, success, ip_address, user_agent)
+    VALUES (%s, %s, %s, %s, %s)
+    """
+    with db.get_cursor() as cur:
+        cur.execute(query, (member_id, verified_by, success, ip_address, user_agent))
+        return cur.rowcount > 0
+
+def log_qr_pin_change(member_id, changed_by, change_type, notes=None):
+    """Log QR PIN change event"""
+    query = """
+    INSERT INTO qr_pin_change_log (member_id, changed_by, change_type, notes)
     VALUES (%s, %s, %s, %s)
     """
     with db.get_cursor() as cur:
-        cur.execute(query, (member_id, ip_address, user_agent, success))
+        cur.execute(query, (member_id, changed_by, change_type, notes))
         return cur.rowcount > 0
 
-def log_qr_pin_reset(member_id, reset_by, reason=None):
-    """Log QR PIN reset"""
-    query = """
-    INSERT INTO qr_pin_reset_log (member_id, reset_by, reason)
-    VALUES (%s, %s, %s)
-    """
-    with db.get_cursor() as cur:
-        cur.execute(query, (member_id, reset_by, reason))
-        return cur.rowcount > 0
+def has_qr_pin(member_id):
+    """Check if a member has a QR PIN set"""
+    query = "SELECT qr_pin_hash FROM members WHERE id = %s"
+    result = db.execute_query(query, (member_id,), fetch_one=True)
+    return result and result.get('qr_pin_hash') is not None
 
 # ============================================================
 # AUTHENTICATION FUNCTIONS
@@ -568,3 +618,4 @@ try:
     init_database()
 except Exception as e:
     logger.error(f"Database initialization failed: {e}")
+    # Continue anyway - tables might already exist

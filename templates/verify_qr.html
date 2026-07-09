@@ -10,12 +10,13 @@
                 <i class="fas fa-qrcode text-gold"></i>
                 QR Code Verification
             </h2>
-            <p class="text-muted">Scan or enter QR code data to verify member details. PIN-protected QR codes require the member's PIN.</p>
+            <p class="text-muted">Scan or enter QR code data to verify member details.</p>
         </div>
     </div>
 
     <div class="row justify-content-center">
         <div class="col-md-8">
+            <!-- QR Input Form -->
             <div class="card">
                 <div class="card-body">
                     <form method="POST" id="verifyForm">
@@ -25,16 +26,6 @@
                             <textarea class="form-control" id="qr_data" name="qr_data" 
                                       rows="3" placeholder="Paste QR code data here or scan using your phone"></textarea>
                         </div>
-                        
-                        {% if pin_required or form.qr_pin.data %}
-                        <div class="mb-3">
-                            <label for="qr_pin" class="form-label required">QR PIN</label>
-                            <input type="password" class="form-control pin-input" id="qr_pin" name="qr_pin" 
-                                   placeholder="Enter 4-digit PIN" maxlength="4" pattern="[0-9]{4}" required>
-                            <small class="text-muted">Enter the member's 4-digit PIN to view their details.</small>
-                        </div>
-                        {% endif %}
-                        
                         <button type="submit" class="btn btn-gold w-100">
                             <i class="fas fa-search me-2"></i>Verify Member
                         </button>
@@ -42,6 +33,135 @@
                 </div>
             </div>
 
+            <!-- PIN Form (shown when QR has PIN protection) -->
+            {% if show_pin_form and member %}
+            <div class="card mt-4 border-warning">
+                <div class="card-header bg-warning">
+                    <h5 class="mb-0 text-dark">
+                        <i class="fas fa-lock me-2"></i>PIN Required
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-info">
+                        <i class="fas fa-shield-alt me-2"></i>
+                        This QR code is PIN protected. Please enter the 4-digit PIN to view member details.
+                    </div>
+                    <form method="POST">
+                        {{ pin_form.hidden_tag() }}
+                        <input type="hidden" name="qr_data" value="{{ qr_token or member.qr_code_data }}">
+                        <div class="mb-3">
+                            <label for="pin" class="form-label required">Enter 4-digit PIN</label>
+                            <input type="password" class="form-control" id="pin" name="pin" 
+                                   placeholder="Enter PIN" maxlength="4" pattern="[0-9]{4}"
+                                   inputmode="numeric" required>
+                            <div class="form-text">
+                                <i class="fas fa-info-circle me-1"></i>
+                                Contact the member if you don't have the PIN.
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-success w-100">
+                            <i class="fas fa-unlock me-2"></i>Verify PIN
+                        </button>
+                    </form>
+                    <div class="mt-3">
+                        <small class="text-muted">
+                            <i class="fas fa-clock me-1"></i>
+                            PIN is locked after 5 failed attempts (15 minute lockout)
+                        </small>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Error Display -->
+            {% if error %}
+            <div class="card mt-4 border-danger">
+                <div class="card-header bg-danger text-white">
+                    <h5 class="mb-0"><i class="fas fa-exclamation-circle me-2"></i>Verification Failed</h5>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-danger">
+                        <i class="fas fa-times-circle me-2"></i>
+                        {{ error }}
+                    </div>
+                    <p class="text-muted">Please check the QR code data and try again.</p>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Verified Member Details -->
+            {% if verified_member %}
+            <div class="card mt-4 border-success">
+                <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="fas fa-check-circle me-2"></i>Member Verified</h5>
+                    <span class="badge bg-light text-dark">
+                        <i class="fas fa-shield-alt me-1"></i>
+                        PIN Verified
+                    </span>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <table class="table table-sm">
+                                <tr>
+                                    <td><strong>Member Number:</strong></td>
+                                    <td>{{ verified_member.member_number }}</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Full Name:</strong></td>
+                                    <td>{{ verified_member.full_name }}</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>National ID:</strong></td>
+                                    <td>{{ verified_member.national_id }}</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Telephone:</strong></td>
+                                    <td>{{ verified_member.telephone }}</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Group/Stage:</strong></td>
+                                    <td>{{ verified_member.group_stage_name or 'N/A' }}</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Motorcycle:</strong></td>
+                                    <td>{{ verified_member.motorcycle_registration or 'N/A' }}</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Status:</strong></td>
+                                    <td>
+                                        {% if verified_member.badge_issued %}
+                                            <span class="badge bg-success"><i class="fas fa-check-circle"></i> Active</span>
+                                        {% else %}
+                                            <span class="badge bg-warning">Pending</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                            </table>
+                        </div>
+                        <div class="col-md-6 text-center">
+                            {% if verified_member.passport_photo %}
+                            <img src="{{ url_for('static', filename='uploads/' + verified_member.passport_photo) }}" 
+                                 alt="Member Photo" class="img-fluid rounded" style="max-width: 150px; max-height: 180px;">
+                            {% else %}
+                            <div class="border rounded p-3">
+                                <i class="fas fa-user-circle fa-5x text-muted"></i>
+                            </div>
+                            {% endif %}
+                            <div class="alert alert-success mt-3">
+                                <i class="fas fa-check-circle fa-2x mb-2 d-block"></i>
+                                <p class="mb-0">This member is verified and registered with <strong>BBS (Busia Bodaboda SACCO)</strong></p>
+                            </div>
+                            <a href="{{ url_for('view_badge', member_id=verified_member.id) }}" class="btn btn-gold">
+                                <i class="fas fa-id-card me-2"></i>View Badge
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Instructions -->
             <div class="card mt-4">
                 <div class="card-header">
                     <h5 class="mb-0"><i class="fas fa-info-circle me-2"></i>How to Verify</h5>
@@ -56,14 +176,20 @@
                         </li>
                         <li class="list-group-item d-flex justify-content-between align-items-start">
                             <div class="ms-2 me-auto">
-                                <div class="fw-bold">Enter the PIN</div>
-                                If the QR code is PIN-protected, enter the member's 4-digit PIN.
+                                <div class="fw-bold">Copy the Data</div>
+                                Copy the text data from the QR code scanner.
                             </div>
                         </li>
                         <li class="list-group-item d-flex justify-content-between align-items-start">
                             <div class="ms-2 me-auto">
                                 <div class="fw-bold">Paste and Verify</div>
                                 Paste the data in the form above and click Verify.
+                            </div>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-start">
+                            <div class="ms-2 me-auto">
+                                <div class="fw-bold">Enter PIN (if required)</div>
+                                If the QR code is PIN protected, enter the 4-digit PIN to view details.
                             </div>
                         </li>
                         <li class="list-group-item d-flex justify-content-between align-items-start">
@@ -75,71 +201,6 @@
                     </ol>
                 </div>
             </div>
-
-            {% if member and pin_verified %}
-                <div class="card mt-4 border-success">
-                    <div class="card-header bg-success text-white">
-                        <h5 class="mb-0"><i class="fas fa-check-circle me-2"></i>Member Verified</h5>
-                    </div>
-                    <div class="card-body">
-                        <div class="row">
-                            <div class="col-md-6">
-                                <table class="table table-sm">
-                                    <tr>
-                                        <td><strong>Member Number:</strong></td>
-                                        <td>{{ member.member_number }}</td>
-                                    </tr>
-                                    <tr>
-                                        <td><strong>Full Name:</strong></td>
-                                        <td>{{ member.full_name }}</td>
-                                    </tr>
-                                    <tr>
-                                        <td><strong>National ID:</strong></td>
-                                        <td>{{ member.national_id }}</td>
-                                    </tr>
-                                    <tr>
-                                        <td><strong>Telephone:</strong></td>
-                                        <td>{{ member.telephone }}</td>
-                                    </tr>
-                                    <tr>
-                                        <td><strong>Group/Stage:</strong></td>
-                                        <td>{{ member.group_stage_name or 'N/A' }}</td>
-                                    </tr>
-                                    <tr>
-                                        <td><strong>Motorcycle:</strong></td>
-                                        <td>{{ member.motorcycle_registration or 'N/A' }}</td>
-                                    </tr>
-                                </table>
-                            </div>
-                            <div class="col-md-6 text-center">
-                                <div class="alert alert-success">
-                                    <i class="fas fa-check-circle fa-2x mb-2"></i>
-                                    <p class="mb-0">This member is verified and registered with <strong>BBS (Busia Bodaboda SACCO)</strong></p>
-                                </div>
-                                <div class="mt-2">
-                                    <span class="badge bg-success"><i class="fas fa-lock me-1"></i> PIN Verified</span>
-                                    <a href="{{ url_for('view_badge', member_id=member.id) }}" class="btn btn-gold btn-sm">
-                                        <i class="fas fa-id-card me-2"></i>View Badge
-                                    </a>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            {% elif error %}
-                <div class="card mt-4 border-danger">
-                    <div class="card-header bg-danger text-white">
-                        <h5 class="mb-0"><i class="fas fa-exclamation-circle me-2"></i>Verification Failed</h5>
-                    </div>
-                    <div class="card-body">
-                        <div class="alert alert-danger">
-                            <i class="fas fa-times-circle me-2"></i>
-                            {{ error }}
-                        </div>
-                        <p class="text-muted">Please check the QR code data and try again.</p>
-                    </div>
-                </div>
-            {% endif %}
         </div>
     </div>
 </div>
@@ -161,13 +222,6 @@
     
     .list-group-item {
         background: transparent;
-    }
-    
-    .pin-input {
-        font-size: 1.5rem;
-        letter-spacing: 8px;
-        text-align: center;
-        font-weight: bold;
     }
 </style>
 {% endblock %}

@@ -6,11 +6,12 @@ import os
 import logging
 import zipfile
 import re
+import uuid
 from datetime import datetime, timezone, timedelta
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_file, send_from_directory, make_response, session
 from flask_wtf import FlaskForm
 from wtforms import StringField, FileField, HiddenField, SelectField, BooleanField, PasswordField, IntegerField
-from wtforms.validators import DataRequired, Length, Optional, NumberRange
+from wtforms.validators import DataRequired, Length, Optional, NumberRange, ValidationError
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from flask_bcrypt import Bcrypt
 from flask_wtf.csrf import CSRFProtect
@@ -20,6 +21,7 @@ from config import config, Config
 from database import (
     db, create_member, get_member, get_member_by_number,
     get_member_by_national_id, get_member_by_telephone,
+    get_member_by_qr_token,
     get_all_members, get_members_count, update_member,
     delete_member, get_recent_members,
     get_unissued_members, get_issued_members, log_badge_issuance,
@@ -27,7 +29,8 @@ from database import (
     get_admin_by_id, get_admin_by_username,
     update_admin_password, log_admin_login,
     update_last_login,
-    set_qr_pin, get_qr_pin_hash, log_qr_verification, log_qr_pin_reset
+    set_qr_pin, get_qr_pin_hash, verify_qr_pin,
+    log_qr_pin_verification, log_qr_pin_change, has_qr_pin
 )
 from utils.qr_generator import QRGenerator
 from utils.image_processor import ImageProcessor
@@ -84,8 +87,16 @@ def format_datetime_iso(value):
             return value
     return value.isoformat()
 
+@app.template_filter('has_pin')
+def has_qr_pin_filter(member):
+    """Check if member has QR PIN set"""
+    if not member:
+        return False
+    return has_qr_pin(member['id'])
+
 app.jinja_env.filters['datetime'] = format_datetime
 app.jinja_env.filters['datetime_iso'] = format_datetime_iso
+app.jinja_env.filters['has_pin'] = has_qr_pin_filter
 
 # Application context processor
 @app.context_processor
@@ -138,6 +149,16 @@ def load_user(user_id):
     return None
 
 # ----------------------------
+# Custom Validators
+# ----------------------------
+
+def validate_pin_length(form, field):
+    """Validate PIN is exactly 4 digits"""
+    pin = str(field.data)
+    if not pin.isdigit() or len(pin) != 4:
+        raise ValidationError('PIN must be exactly 4 digits')
+
+# ----------------------------
 # Forms
 # ----------------------------
 
@@ -154,23 +175,27 @@ class MemberRegistrationForm(FlaskForm):
     next_of_kin_name = StringField('Next of Kin Name', validators=[DataRequired()])
     next_of_kin_phone = StringField('Next of Kin Phone', validators=[DataRequired()])
     date_registered = HiddenField('Date Registered')
-    qr_pin = StringField('QR PIN', validators=[DataRequired(), Length(min=4, max=4)])
+    qr_pin = StringField('QR PIN (4 digits)', validators=[Optional(), validate_pin_length])
 
 class QRVerificationForm(FlaskForm):
     qr_data = StringField('QR Data', validators=[DataRequired()])
-    qr_pin = StringField('QR PIN', validators=[DataRequired(), Length(min=4, max=4)])
+
+class QRPinVerificationForm(FlaskForm):
+    pin = StringField('PIN', validators=[DataRequired(), validate_pin_length])
 
 class QRPinChangeForm(FlaskForm):
-    current_pin = StringField('Current PIN', validators=[DataRequired(), Length(min=4, max=4)])
-    new_pin = StringField('New PIN', validators=[DataRequired(), Length(min=4, max=4)])
-    confirm_pin = StringField('Confirm PIN', validators=[DataRequired(), Length(min=4, max=4)])
+    current_pin = StringField('Current PIN', validators=[DataRequired(), validate_pin_length])
+    new_pin = StringField('New PIN', validators=[DataRequired(), validate_pin_length])
     national_id = StringField('National ID', validators=[DataRequired(), Length(min=5, max=20)])
 
-class QRPinResetForm(FlaskForm):
+class QRPinAdminResetForm(FlaskForm):
     admin_password = PasswordField('Admin Password', validators=[DataRequired()])
-    new_pin = StringField('New PIN', validators=[DataRequired(), Length(min=4, max=4)])
-    confirm_pin = StringField('Confirm PIN', validators=[DataRequired(), Length(min=4, max=4)])
-    reason = StringField('Reason for Reset', validators=[Optional()])
+    new_pin = StringField('New PIN', validators=[DataRequired(), validate_pin_length])
+    member_id = HiddenField('Member ID', validators=[DataRequired()])
+
+class QRVerificationWithPinForm(FlaskForm):
+    qr_data = HiddenField('QR Data', validators=[DataRequired()])
+    pin = StringField('PIN', validators=[DataRequired(), validate_pin_length])
 
 class BatchIssuanceForm(FlaskForm):
     format_type = SelectField('Print Format', choices=[('png', 'PNG'), ('pdf', 'PDF'), ('both', 'Both')])
@@ -259,11 +284,14 @@ def register():
 
     if form.validate_on_submit():
         try:
-            # Validate QR PIN
-            qr_pin = form.qr_pin.data.strip()
-            if not qr_pin.isdigit() or len(qr_pin) != 4:
-                flash('QR PIN must be exactly 4 digits.', 'danger')
-                return render_template('register.html', form=form)
+            # Validate PIN format if provided
+            qr_pin = form.qr_pin.data.strip() if form.qr_pin.data else None
+            qr_pin_hash = None
+            if qr_pin:
+                if not qr_pin.isdigit() or len(qr_pin) != 4:
+                    flash('PIN must be exactly 4 digits.', 'danger')
+                    return render_template('register.html', form=form)
+                qr_pin_hash = bcrypt.generate_password_hash(qr_pin).decode('utf-8')
             
             data = {
                 'member_number': form.member_number.data.upper().strip(),
@@ -279,11 +307,12 @@ def register():
                 'date_registered': now.strftime('%Y-%m-%d'),
                 'passport_photo': None,
                 'qr_code_data': None,
-                'qr_pin_hash': bcrypt.generate_password_hash(qr_pin).decode('utf-8'),
                 'badge_image': None,
                 'badge_issued': False,
                 'badge_issued_date': None,
-                'badge_issued_by': None
+                'badge_issued_by': None,
+                'qr_pin_hash': qr_pin_hash,
+                'qr_pin_set_at': now if qr_pin_hash else None
             }
 
             if get_member_by_number(data['member_number']):
@@ -308,10 +337,9 @@ def register():
                         flash('Invalid photo file. Please upload a JPG, JPEG, or PNG image.', 'danger')
                         return render_template('register.html', form=form)
 
-            # Generate QR with PIN encryption
             try:
-                qr_path, qr_filename, encrypted_data = QRGenerator.generate_qr(data, pin=qr_pin)
-                data['qr_code_data'] = encrypted_data  # Store encrypted data, not plaintext
+                qr_path, qr_filename = QRGenerator.generate_qr(data)
+                data['qr_code_data'] = qr_path
             except Exception as e:
                 logger.error(f"Error generating QR code: {e}")
                 flash('Error generating QR code. Please try again.', 'danger')
@@ -324,7 +352,8 @@ def register():
                 try:
                     badge_path, badge_filename = BadgeGenerator.generate_badge(member, include_bleed=True)
                     update_member(member_id, {'badge_image': badge_filename})
-                    flash(f'Member {data["full_name"]} registered successfully with PIN-protected QR code!', 'success')
+                    pin_msg = " with PIN protection" if qr_pin_hash else ""
+                    flash(f'Member {data["full_name"]} registered successfully{pin_msg}!', 'success')
                 except Exception as e:
                     logger.error(f"Error generating badge: {e}")
                     flash('Member registered but badge generation failed. You can regenerate later.', 'warning')
@@ -368,6 +397,9 @@ def dashboard():
         groups = set([m.get('group_stage_name') for m in all_members if m.get('group_stage_name')])
         recent = get_recent_members(10)
 
+        # Count members with QR PIN
+        members_with_pin = len([m for m in all_members if m.get('qr_pin_hash')])
+
         pagination = {
             'page': page,
             'per_page': per_page,
@@ -389,7 +421,8 @@ def dashboard():
                              total_groups=len(groups),
                              unissued_badges=unissued,
                              issued_badges=issued,
-                             recent_members=recent)
+                             recent_members=recent,
+                             members_with_pin=members_with_pin)
     except Exception as e:
         logger.error(f"Error loading dashboard: {e}")
         flash('Error loading dashboard.', 'danger')
@@ -420,14 +453,6 @@ def edit_member(member_id):
                 'next_of_kin_phone': form.next_of_kin_phone.data.strip()
             }
 
-            # Handle QR PIN update if provided
-            qr_pin = form.qr_pin.data.strip()
-            if qr_pin:
-                if not qr_pin.isdigit() or len(qr_pin) != 4:
-                    flash('QR PIN must be exactly 4 digits.', 'danger')
-                    return render_template('edit_member.html', form=form, member=member)
-                data['qr_pin_hash'] = bcrypt.generate_password_hash(qr_pin).decode('utf-8')
-
             existing = get_member_by_number(data['member_number'])
             if existing and existing['id'] != member_id:
                 flash(f'Member number {data["member_number"]} already exists.', 'danger')
@@ -453,17 +478,6 @@ def edit_member(member_id):
                         flash('Invalid photo file. Please upload a JPG, JPEG, or PNG image.', 'danger')
                         return render_template('edit_member.html', form=form, member=member)
 
-            # Regenerate QR with new PIN if changed
-            if qr_pin:
-                try:
-                    qr_path, qr_filename, encrypted_data = QRGenerator.generate_qr(
-                        {**member, **data}, pin=qr_pin
-                    )
-                    data['qr_code_data'] = encrypted_data
-                except Exception as e:
-                    logger.error(f"Error regenerating QR: {e}")
-                    flash('Error regenerating QR code.', 'danger')
-
             update_member(member_id, data)
             updated_member = get_member(member_id)
             if updated_member:
@@ -477,7 +491,6 @@ def edit_member(member_id):
             logger.error(f"Error updating member: {e}")
             flash('Error updating member. Please try again.', 'danger')
 
-    # Populate form
     form.member_number.data = member['member_number']
     form.full_name.data = member['full_name']
     form.national_id.data = member['national_id']
@@ -488,7 +501,6 @@ def edit_member(member_id):
     form.motorcycle_registration.data = member['motorcycle_registration']
     form.next_of_kin_name.data = member['next_of_kin_name']
     form.next_of_kin_phone.data = member['next_of_kin_phone']
-    form.qr_pin.data = ''
 
     return render_template('edit_member.html', form=form, member=member)
 
@@ -534,7 +546,7 @@ def view_badge(member_id):
         return redirect(url_for('dashboard'))
 
     issuance_log = get_issuance_log(member_id, 10)
-    has_pin = member.get('qr_pin_hash') is not None
+    has_pin = has_qr_pin(member_id)
     return render_template('badge.html', member=member, issuance_log=issuance_log, has_pin=has_pin)
 
 @app.route('/badge/download/<int:member_id>')
@@ -718,140 +730,157 @@ def batch_badges():
 @app.route('/verify-qr', methods=['GET', 'POST'])
 def verify_qr():
     form = QRVerificationForm()
+    pin_form = QRVerificationWithPinForm()
     member = None
     error = None
-    pin_required = False
-    pin_verified = False
+    qr_token = None
+    show_pin_form = False
+    verified_member = None
+    verification_error = None
 
-    if request.method == 'POST':
+    # Check if we have a QR token in session (after PIN verification)
+    if 'qr_verification_token' in session:
+        qr_token = session.get('qr_verification_token')
+        member = get_member_by_qr_token(qr_token)
+        if member:
+            # Member found, clear the session token and show details
+            session.pop('qr_verification_token', None)
+            verified_member = member
+            # Log successful verification
+            log_qr_pin_verification(member['id'], 'Public', True, request.remote_addr, request.user_agent.string)
+            return render_template('verify_qr.html', 
+                                 form=form, 
+                                 pin_form=pin_form,
+                                 verified_member=verified_member,
+                                 error=None)
+
+    if form.validate_on_submit():
         try:
             qr_data = form.qr_data.data.strip()
-            qr_pin = form.qr_pin.data.strip() if form.qr_pin.data else None
-
-            # Check if QR data is encrypted (starts with BBSQR:)
-            if qr_data.startswith('BBSQR:'):
-                pin_required = True
-                
-                if not qr_pin:
-                    error = 'This QR code is PIN-protected. Please enter the PIN.'
-                    return render_template('verify_qr.html', form=form, member=member, error=error, pin_required=True, pin_verified=False)
-                
-                # Extract member number from encrypted QR
-                encrypted_part = qr_data[6:]
-                # We need to find the member by trying to match with stored data
-                # Since we can't decrypt without PIN, we need to search by trying all members
-                # Alternative: store member number in QR header
-                # For now, we'll try to find the member by scanning the database
-                # A better approach: include member number in the encrypted data
-                
-                # Try to decrypt with provided PIN
-                try:
-                    decrypted_data = QRGenerator.decrypt_data(encrypted_part, qr_pin)
-                    member_number = decrypted_data.get('member')
-                    
-                    if member_number:
-                        member = get_member_by_number(member_number)
-                        if not member:
-                            error = 'Member not found. Please check the QR code.'
-                        else:
-                            # Log successful verification
-                            log_qr_verification(member['id'], request.remote_addr, request.user_agent.string, True)
-                            pin_verified = True
-                            flash('QR code verified successfully!', 'success')
-                    else:
-                        error = 'Invalid QR code data format.'
-                except ValueError as e:
-                    error = 'Invalid PIN. Please try again.'
-                    # Log failed attempt
-                    if member:
-                        log_qr_verification(member.get('id', 0), request.remote_addr, request.user_agent.string, False)
-                except Exception as e:
-                    logger.error(f"Error decrypting QR: {e}")
-                    error = 'Error verifying QR code. Please try again.'
+            
+            # Find member by QR token
+            member = get_member_by_qr_token(qr_data)
+            
+            if not member:
+                error = 'Invalid QR code. Member not found.'
+                return render_template('verify_qr.html', form=form, pin_form=pin_form, error=error)
+            
+            # Check if member has PIN protection
+            if has_qr_pin(member['id']):
+                # Store token in session and show PIN form
+                session['qr_verification_token'] = qr_data
+                show_pin_form = True
+                qr_token = qr_data
+                return render_template('verify_qr.html', 
+                                     form=form, 
+                                     pin_form=pin_form, 
+                                     show_pin_form=True,
+                                     member=member,
+                                     qr_token=qr_token,
+                                     error=None)
             else:
-                # Legacy QR format - parse directly
-                lines = qr_data.split('\n')
-                member_number = None
-                for line in lines:
-                    if line.startswith('Member:'):
-                        member_number = line.replace('Member:', '').strip()
-                        break
-                
-                if member_number:
-                    member = get_member_by_number(member_number)
-                    if not member:
-                        error = 'Member not found. Please check the QR code data.'
-                    else:
-                        pin_verified = True
-                else:
-                    error = 'Invalid QR code data format.'
+                # No PIN required, show member details directly
+                verified_member = member
+                log_qr_pin_verification(member['id'], 'Public', True, request.remote_addr, request.user_agent.string)
+                return render_template('verify_qr.html', 
+                                     form=form, 
+                                     pin_form=pin_form,
+                                     verified_member=verified_member,
+                                     error=None)
 
         except Exception as e:
             logger.error(f"Error verifying QR: {e}")
             error = 'Error verifying QR code. Please try again.'
 
-    return render_template('verify_qr.html', form=form, member=member, error=error, pin_required=pin_required, pin_verified=pin_verified)
+    # Handle PIN verification
+    if pin_form.validate_on_submit():
+        try:
+            qr_data = pin_form.qr_data.data
+            pin = pin_form.pin.data
+            
+            # Find member by QR token
+            member = get_member_by_qr_token(qr_data)
+            
+            if not member:
+                verification_error = 'Invalid QR code. Member not found.'
+                return render_template('verify_qr.html', form=form, pin_form=pin_form, error=verification_error)
+            
+            # Verify PIN
+            result = verify_qr_pin(member['id'], pin, bcrypt)
+            
+            if result['success']:
+                # PIN verified, show member details
+                verified_member = member
+                log_qr_pin_verification(member['id'], 'Public', True, request.remote_addr, request.user_agent.string)
+                session.pop('qr_verification_token', None)
+                return render_template('verify_qr.html', 
+                                     form=form, 
+                                     pin_form=pin_form,
+                                     verified_member=verified_member,
+                                     error=None)
+            else:
+                verification_error = result.get('error', 'Invalid PIN')
+                log_qr_pin_verification(member['id'], 'Public', False, request.remote_addr, request.user_agent.string)
+                # Keep showing PIN form
+                show_pin_form = True
+                qr_token = qr_data
+                return render_template('verify_qr.html', 
+                                     form=form, 
+                                     pin_form=pin_form, 
+                                     show_pin_form=True,
+                                     member=member,
+                                     qr_token=qr_token,
+                                     error=verification_error)
+
+        except Exception as e:
+            logger.error(f"Error verifying PIN: {e}")
+            verification_error = 'Error verifying PIN. Please try again.'
+
+    return render_template('verify_qr.html', form=form, pin_form=pin_form, error=error or verification_error)
 
 # ============================================================
-# QR PIN MANAGEMENT
+# QR PIN MANAGEMENT ROUTES
 # ============================================================
 
 @app.route('/qr-pin/change/<int:member_id>', methods=['GET', 'POST'])
 @login_required
 def change_qr_pin(member_id):
-    """Change QR PIN - requires current PIN and National ID"""
+    """Change QR PIN for a member (requires current PIN + National ID)"""
     member = get_member(member_id)
     if not member:
         flash('Member not found.', 'danger')
         return redirect(url_for('dashboard'))
     
+    # Check if member has a PIN set
+    if not has_qr_pin(member_id):
+        flash('This member does not have a QR PIN set. You can set one during registration or through admin reset.', 'warning')
+        return redirect(url_for('view_badge', member_id=member_id))
+    
     form = QRPinChangeForm()
     
     if form.validate_on_submit():
-        current_pin = form.current_pin.data.strip()
-        new_pin = form.new_pin.data.strip()
-        confirm_pin = form.confirm_pin.data.strip()
-        national_id = form.national_id.data.strip()
-        
-        # Verify National ID matches
-        if national_id != member['national_id']:
-            flash('National ID does not match the member\'s record.', 'danger')
-            return render_template('qr_pin_change.html', form=form, member=member)
-        
-        # Verify new PINs match
-        if new_pin != confirm_pin:
-            flash('New PIN and confirmation do not match.', 'danger')
-            return render_template('qr_pin_change.html', form=form, member=member)
-        
-        # Validate PIN format
-        if not new_pin.isdigit() or len(new_pin) != 4:
-            flash('PIN must be exactly 4 digits.', 'danger')
-            return render_template('qr_pin_change.html', form=form, member=member)
-        
-        # Verify current PIN
-        stored_hash = member.get('qr_pin_hash')
-        if not stored_hash:
-            flash('This member does not have a QR PIN set. Please set one during registration or contact admin.', 'danger')
-            return render_template('qr_pin_change.html', form=form, member=member)
-        
-        if not bcrypt.check_password_hash(stored_hash, current_pin):
-            flash('Current PIN is incorrect.', 'danger')
-            return render_template('qr_pin_change.html', form=form, member=member)
-        
-        # Update PIN
         try:
-            new_hash = bcrypt.generate_password_hash(new_pin).decode('utf-8')
-            set_qr_pin(member_id, new_hash)
+            current_pin = form.current_pin.data
+            new_pin = form.new_pin.data
+            national_id = form.national_id.data.strip()
             
-            # Regenerate QR code with new PIN
-            member_updated = get_member(member_id)
-            if member_updated:
-                qr_path, qr_filename, encrypted_data = QRGenerator.generate_qr(member_updated, pin=new_pin)
-                update_member(member_id, {'qr_code_data': encrypted_data})
-                
-                # Regenerate badge to include updated QR
-                badge_path, badge_filename = BadgeGenerator.generate_badge(member_updated, include_bleed=True)
-                update_member(member_id, {'badge_image': badge_filename})
+            # Verify national ID
+            if national_id != member['national_id']:
+                flash('National ID does not match the member record.', 'danger')
+                return render_template('change_qr_pin.html', form=form, member=member)
+            
+            # Verify current PIN
+            result = verify_qr_pin(member_id, current_pin, bcrypt)
+            if not result['success']:
+                flash(result.get('error', 'Invalid current PIN.'), 'danger')
+                return render_template('change_qr_pin.html', form=form, member=member)
+            
+            # Hash new PIN and update
+            new_pin_hash = bcrypt.generate_password_hash(new_pin).decode('utf-8')
+            set_qr_pin(member_id, new_pin_hash)
+            
+            # Log the change
+            log_qr_pin_change(member_id, current_user.username, 'CHANGE', f'PIN changed by {current_user.username}')
             
             flash('QR PIN changed successfully!', 'success')
             return redirect(url_for('view_badge', member_id=member_id))
@@ -860,86 +889,64 @@ def change_qr_pin(member_id):
             logger.error(f"Error changing QR PIN: {e}")
             flash('Error changing QR PIN. Please try again.', 'danger')
     
-    return render_template('qr_pin_change.html', form=form, member=member)
+    return render_template('change_qr_pin.html', form=form, member=member)
 
-@app.route('/qr-pin/reset/<int:member_id>', methods=['GET', 'POST'])
+@app.route('/qr-pin/admin-reset/<int:member_id>', methods=['GET', 'POST'])
 @login_required
-def reset_qr_pin(member_id):
-    """Reset QR PIN - Admin only, requires admin password"""
-    # Check if user is admin
+def admin_reset_qr_pin(member_id):
+    """Admin reset QR PIN (requires admin password)"""
+    # Verify admin has sufficient privileges
     if current_user.role not in ['admin', 'super_admin']:
-        flash('Only administrators can reset QR PINs.', 'danger')
-        return redirect(url_for('view_badge', member_id=member_id))
+        flash('You do not have permission to reset QR PINs.', 'danger')
+        return redirect(url_for('dashboard'))
     
     member = get_member(member_id)
     if not member:
         flash('Member not found.', 'danger')
         return redirect(url_for('dashboard'))
     
-    form = QRPinResetForm()
+    form = QRPinAdminResetForm()
+    form.member_id.data = str(member_id)
     
     if form.validate_on_submit():
-        admin_password = form.admin_password.data
-        new_pin = form.new_pin.data.strip()
-        confirm_pin = form.confirm_pin.data.strip()
-        reason = form.reason.data.strip() or 'Admin reset'
-        
-        # Verify admin password
-        admin_record = get_admin_by_id(current_user.id)
-        if not admin_record or not bcrypt.check_password_hash(admin_record['password_hash'], admin_password):
-            flash('Admin password is incorrect.', 'danger')
-            return render_template('qr_pin_reset.html', form=form, member=member)
-        
-        # Verify new PINs match
-        if new_pin != confirm_pin:
-            flash('New PIN and confirmation do not match.', 'danger')
-            return render_template('qr_pin_reset.html', form=form, member=member)
-        
-        # Validate PIN format
-        if not new_pin.isdigit() or len(new_pin) != 4:
-            flash('PIN must be exactly 4 digits.', 'danger')
-            return render_template('qr_pin_reset.html', form=form, member=member)
-        
-        # Reset PIN
         try:
-            new_hash = bcrypt.generate_password_hash(new_pin).decode('utf-8')
-            set_qr_pin(member_id, new_hash)
+            admin_password = form.admin_password.data
+            new_pin = form.new_pin.data
+            
+            # Verify admin password
+            admin = get_admin_by_id(current_user.id)
+            if not admin or not bcrypt.check_password_hash(admin['password_hash'], admin_password):
+                flash('Invalid admin password.', 'danger')
+                return render_template('admin_reset_qr_pin.html', form=form, member=member)
+            
+            # Hash new PIN and update
+            new_pin_hash = bcrypt.generate_password_hash(new_pin).decode('utf-8')
+            set_qr_pin(member_id, new_pin_hash)
             
             # Log the reset
-            log_qr_pin_reset(member_id, current_user.username, reason)
+            log_qr_pin_change(member_id, current_user.username, 'ADMIN_RESET', f'PIN reset by admin {current_user.username}')
             
-            # Regenerate QR code with new PIN
-            member_updated = get_member(member_id)
-            if member_updated:
-                qr_path, qr_filename, encrypted_data = QRGenerator.generate_qr(member_updated, pin=new_pin)
-                update_member(member_id, {'qr_code_data': encrypted_data})
-                
-                # Regenerate badge to include updated QR
-                badge_path, badge_filename = BadgeGenerator.generate_badge(member_updated, include_bleed=True)
-                update_member(member_id, {'badge_image': badge_filename})
-            
-            flash(f'QR PIN for {member["full_name"]} has been reset successfully by admin.', 'success')
+            flash(f'QR PIN for {member["full_name"]} has been reset successfully!', 'success')
             return redirect(url_for('view_badge', member_id=member_id))
             
         except Exception as e:
             logger.error(f"Error resetting QR PIN: {e}")
             flash('Error resetting QR PIN. Please try again.', 'danger')
     
-    return render_template('qr_pin_reset.html', form=form, member=member)
+    return render_template('admin_reset_qr_pin.html', form=form, member=member)
 
 @app.route('/qr-pin/status/<int:member_id>')
 @login_required
 def qr_pin_status(member_id):
-    """Check if member has QR PIN set"""
+    """Check QR PIN status for a member (AJAX)"""
     member = get_member(member_id)
     if not member:
         return jsonify({'success': False, 'error': 'Member not found'}), 404
     
-    has_pin = member.get('qr_pin_hash') is not None
     return jsonify({
         'success': True,
-        'has_pin': has_pin,
-        'member_number': member['member_number']
+        'has_pin': has_qr_pin(member_id),
+        'pin_set_at': member.get('qr_pin_set_at')
     })
 
 # ============================================================
@@ -998,10 +1005,10 @@ def health_check():
         'features': {
             'badge_generation': True,
             'qr_codes': True,
-            'pin_protection': True,
             'batch_issuance': True,
             'print_ready': True,
-            'authentication': True
+            'authentication': True,
+            'qr_pin_protection': True
         }
     })
 

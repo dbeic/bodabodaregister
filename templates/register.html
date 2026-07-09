@@ -60,13 +60,6 @@
         margin-right: 10px;
     }
     
-    .pin-input {
-        font-size: 1.5rem;
-        letter-spacing: 8px;
-        text-align: center;
-        font-weight: bold;
-    }
-    
     .photo-status {
         font-size: 0.9rem;
         margin-top: 5px;
@@ -79,6 +72,13 @@
     .photo-status .text-danger {
         color: #dc3545 !important;
     }
+    
+    .pin-info {
+        background: #f8f9fa;
+        border-radius: 8px;
+        padding: 10px 15px;
+        margin-top: 5px;
+    }
 </style>
 {% endblock %}
 
@@ -90,7 +90,7 @@
                 <i class="fas fa-user-plus text-gold"></i>
                 Register New Member - BBS (Busia Bodaboda SACCO)
             </h2>
-            <p class="text-muted">Fill in the details below to register a new bodaboda member.</p>
+            <p class="text-muted">Fill in the details below to register a new bodaboda member. You can upload a photo or capture one using your camera.</p>
         </div>
     </div>
 
@@ -181,26 +181,39 @@
             </div>
         </div>
 
-        <!-- QR PIN -->
+        <!-- QR PIN Protection -->
         <div class="form-section">
             <h5 class="form-section-title">
-                <i class="fas fa-key"></i>
-                QR Code Security PIN
+                <i class="fas fa-lock"></i>
+                QR Code PIN Protection
             </h5>
             <div class="row">
                 <div class="col-md-6">
                     <div class="mb-3">
-                        <label for="qr_pin" class="form-label required">4-Digit PIN</label>
-                        <input type="password" class="form-control pin-input" id="qr_pin" name="qr_pin" 
-                               placeholder="****" maxlength="4" pattern="[0-9]{4}" required>
-                        <small class="text-muted">This PIN will be required to view QR code information.</small>
-                        <div class="invalid-feedback">Please enter a 4-digit PIN (numbers only).</div>
+                        <label for="qr_pin" class="form-label">Set QR PIN (4 digits)</label>
+                        <input type="password" class="form-control" id="qr_pin" name="qr_pin" 
+                               placeholder="Enter 4-digit PIN" maxlength="4" pattern="[0-9]{4}"
+                               inputmode="numeric">
+                        <small class="text-muted">
+                            <i class="fas fa-info-circle"></i> 
+                            PIN is required to view QR code information. Leave empty to skip.
+                        </small>
+                        <div class="pin-info mt-2">
+                            <i class="fas fa-shield-alt text-gold"></i>
+                            <span class="text-muted small">This PIN will be required when someone scans the QR code.</span>
+                        </div>
                     </div>
                 </div>
                 <div class="col-md-6">
                     <div class="alert alert-info">
-                        <i class="fas fa-shield-alt me-2"></i>
-                        <strong>Security Note:</strong> Keep your QR PIN safe. It's required to verify your membership details.
+                        <i class="fas fa-lock me-2"></i>
+                        <strong>PIN Protection Benefits:</strong>
+                        <ul class="mb-0 mt-1">
+                            <li>Member controls who views their information</li>
+                            <li>Prevents unauthorized access to personal data</li>
+                            <li>Can be changed with current PIN + National ID</li>
+                            <li>Admin can reset PIN with admin password</li>
+                        </ul>
                     </div>
                 </div>
             </div>
@@ -256,7 +269,6 @@
     </form>
 </div>
 
-{% block extra_js %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     // Form validation
@@ -269,11 +281,13 @@ document.addEventListener('DOMContentLoaded', function() {
         form.classList.add('was-validated');
     });
 
-    // PIN validation - only numbers
+    // PIN input validation - only allow numbers
     const pinInput = document.getElementById('qr_pin');
-    pinInput.addEventListener('input', function() {
-        this.value = this.value.replace(/[^0-9]/g, '');
-    });
+    if (pinInput) {
+        pinInput.addEventListener('input', function() {
+            this.value = this.value.replace(/[^0-9]/g, '').slice(0, 4);
+        });
+    }
 
     // Camera functionality
     const video = document.getElementById('video');
@@ -314,31 +328,25 @@ document.addEventListener('DOMContentLoaded', function() {
         const ctx = canvas.getContext('2d');
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         
-        const imageData = canvas.toDataURL('image/jpeg', 0.95);
-        
-        // Create File object
         canvas.toBlob(function(blob) {
             const file = new File([blob], 'passport_photo.jpg', { type: 'image/jpeg' });
             const dataTransfer = new DataTransfer();
             dataTransfer.items.add(file);
             fileInput.files = dataTransfer.files;
             
-            // Show preview
             const reader = new FileReader();
             reader.onload = function(e) {
                 cameraPreview.innerHTML = `
                     <img src="${e.target.result}" class="photo-preview" alt="Captured photo">
                 `;
-                cameraStatus.innerHTML = '<span class="text-success"><i class="fas fa-check-circle"></i> Photo captured!</span>';
+                cameraStatus.innerHTML = '<span class="text-success"><i class="fas fa-check-circle"></i> Photo captured! Ready to register.</span>';
             };
             reader.readAsDataURL(file);
+            
+            closeCamera();
         }, 'image/jpeg', 0.95);
-        
-        // Close camera after capture
-        closeCamera();
     });
 
-    // Close camera
     closeBtn.addEventListener('click', closeCamera);
 
     function closeCamera() {
@@ -358,6 +366,9 @@ document.addEventListener('DOMContentLoaded', function() {
     fileInput.addEventListener('change', function(e) {
         const file = this.files[0];
         if (file) {
+            cameraPreview.innerHTML = '';
+            cameraStatus.innerHTML = '';
+            
             const reader = new FileReader();
             reader.onload = function(e) {
                 photoPreview.innerHTML = `
@@ -373,5 +384,4 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 </script>
-{% endblock %}
 {% endblock %}
