@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+
+{% block title %}Reset QR PIN - Admin - BBS{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="row">
+        <div class="col-12">
+            <h2>
+                <i class="fas fa-user-shield text-gold"></i>
+                Admin QR PIN Reset
+            </h2>
+            <p class="text-muted">Reset the QR verification PIN for <strong>{{ member.full_name }}</strong> ({{ member.member_number }})</p>
+            <div class="alert alert-warning">
+                <i class="fas fa-exclamation-triangle me-2"></i>
+                <strong>Administrator Action:</strong> This will reset the member's QR PIN without requiring their current PIN.
+            </div>
+        </div>
+    </div>
+
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-key me-2"></i>Reset PIN</h5>
+                </div>
+                <div class="card-body">
+                    <form method="POST">
+                        {{ form.hidden_tag() }}
+                        
+                        <div class="mb-3">
+                            <label for="admin_password" class="form-label required">Admin Password</label>
+                            {{ form.admin_password(class="form-control", type="password", placeholder="Enter your admin password") }}
+                            <div class="invalid-feedback">Please enter your admin password.</div>
+                            <small class="text-muted">Your admin password is required to authorize this action.</small>
+                        </div>
+                        
+                        <hr>
+                        
+                        <div class="mb-3">
+                            <label for="new_pin" class="form-label required">New PIN</label>
+                            {{ form.new_pin(class="form-control", type="password", placeholder="Enter new 4-digit PIN", maxlength="4") }}
+                            <div class="invalid-feedback">Please enter a new 4-digit PIN.</div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="confirm_pin" class="form-label required">Confirm New PIN</label>
+                            {{ form.confirm_pin(class="form-control", type="password", placeholder="Confirm new 4-digit PIN", maxlength="4") }}
+                            <div class="invalid-feedback">Please confirm your new PIN.</div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="reason" class="form-label">Reason for Reset</label>
+                            {{ form.reason(class="form-control", placeholder="Optional: Reason for resetting the PIN") }}
+                        </div>
+                        
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-warning">
+                                <i class="fas fa-sync me-2"></i>Reset PIN
+                            </button>
+                            <a href="{{ url_for('view_badge', member_id=member.id) }}" class="btn btn-outline-secondary">
+                                <i class="fas fa-arrow-left me-2"></i>Cancel
+                            </a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            
+            <div class="card mt-4 border-danger">
+                <div class="card-body">
+                    <h6 class="text-danger"><i class="fas fa-exclamation-circle me-2"></i>Important</h6>
+                    <ul class="small text-muted">
+                        <li>This action will reset the member's QR PIN without their consent.</li>
+                        <li>The member will be notified of this change through the system.</li>
+                        <li>This action is logged for audit purposes.</li>
+                        <li>Only use this when the member has forgotten their PIN.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .text-gold { color: var(--gold); }
+    .btn-gold { background-color: var(--gold); color: white; }
+    .btn-gold:hover { background-color: #c9a84a; color: white; }
+    .required::after { content: ' *'; color: #dc3545; }
+</style>
+{% endblock %}

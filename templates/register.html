@@ -60,6 +60,13 @@
         margin-right: 10px;
     }
     
+    .pin-input {
+        font-size: 1.5rem;
+        letter-spacing: 8px;
+        text-align: center;
+        font-weight: bold;
+    }
+    
     .photo-status {
         font-size: 0.9rem;
         margin-top: 5px;
@@ -83,15 +90,12 @@
                 <i class="fas fa-user-plus text-gold"></i>
                 Register New Member - BBS (Busia Bodaboda SACCO)
             </h2>
-            <p class="text-muted">Fill in the details below to register a new bodaboda member. You can upload a photo or capture one using your camera.</p>
+            <p class="text-muted">Fill in the details below to register a new bodaboda member.</p>
         </div>
     </div>
 
     <form method="POST" enctype="multipart/form-data" id="registerForm" novalidate>
         {{ form.hidden_tag() }}
-        
-        <!-- Hidden field for camera capture data -->
-        <input type="hidden" name="camera_photo_data" id="camera_photo_data">
         
         <!-- Personal Details -->
         <div class="form-section">
@@ -177,6 +181,31 @@
             </div>
         </div>
 
+        <!-- QR PIN -->
+        <div class="form-section">
+            <h5 class="form-section-title">
+                <i class="fas fa-key"></i>
+                QR Code Security PIN
+            </h5>
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label for="qr_pin" class="form-label required">4-Digit PIN</label>
+                        <input type="password" class="form-control pin-input" id="qr_pin" name="qr_pin" 
+                               placeholder="****" maxlength="4" pattern="[0-9]{4}" required>
+                        <small class="text-muted">This PIN will be required to view QR code information.</small>
+                        <div class="invalid-feedback">Please enter a 4-digit PIN (numbers only).</div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="alert alert-info">
+                        <i class="fas fa-shield-alt me-2"></i>
+                        <strong>Security Note:</strong> Keep your QR PIN safe. It's required to verify your membership details.
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Passport Photo -->
         <div class="form-section">
             <h5 class="form-section-title">
@@ -240,6 +269,12 @@ document.addEventListener('DOMContentLoaded', function() {
         form.classList.add('was-validated');
     });
 
+    // PIN validation - only numbers
+    const pinInput = document.getElementById('qr_pin');
+    pinInput.addEventListener('input', function() {
+        this.value = this.value.replace(/[^0-9]/g, '');
+    });
+
     // Camera functionality
     const video = document.getElementById('video');
     const canvas = document.getElementById('canvas');
@@ -251,9 +286,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const photoPreview = document.getElementById('photoPreview');
     const photoStatus = document.getElementById('photoStatus');
     const fileInput = document.getElementById('passport_photo');
-    const cameraPhotoData = document.getElementById('camera_photo_data');
     let stream = null;
-    let capturedPhotoData = null;
 
     // Open camera
     openCameraBtn.addEventListener('click', async function() {
@@ -276,29 +309,30 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Capture photo from camera
     captureBtn.addEventListener('click', function() {
-        // Set canvas to video dimensions
         canvas.width = video.videoWidth || 640;
         canvas.height = video.videoHeight || 480;
         const ctx = canvas.getContext('2d');
-        
-        // Draw video frame to canvas
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         
-        // Convert to base64
         const imageData = canvas.toDataURL('image/jpeg', 0.95);
-        capturedPhotoData = imageData;
-        cameraPhotoData.value = imageData;
         
-        // Show preview
-        cameraPreview.innerHTML = `
-            <img src="${imageData}" class="photo-preview" alt="Captured photo">
-        `;
-        cameraStatus.innerHTML = '<span class="text-success"><i class="fas fa-check-circle"></i> Photo captured! Ready to register.</span>';
-        
-        // Clear any uploaded file selection
-        fileInput.value = '';
-        photoPreview.innerHTML = '';
-        photoStatus.innerHTML = '';
+        // Create File object
+        canvas.toBlob(function(blob) {
+            const file = new File([blob], 'passport_photo.jpg', { type: 'image/jpeg' });
+            const dataTransfer = new DataTransfer();
+            dataTransfer.items.add(file);
+            fileInput.files = dataTransfer.files;
+            
+            // Show preview
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                cameraPreview.innerHTML = `
+                    <img src="${e.target.result}" class="photo-preview" alt="Captured photo">
+                `;
+                cameraStatus.innerHTML = '<span class="text-success"><i class="fas fa-check-circle"></i> Photo captured!</span>';
+            };
+            reader.readAsDataURL(file);
+        }, 'image/jpeg', 0.95);
         
         // Close camera after capture
         closeCamera();
@@ -324,12 +358,6 @@ document.addEventListener('DOMContentLoaded', function() {
     fileInput.addEventListener('change', function(e) {
         const file = this.files[0];
         if (file) {
-            // Clear camera capture
-            capturedPhotoData = null;
-            cameraPhotoData.value = '';
-            cameraPreview.innerHTML = '';
-            cameraStatus.innerHTML = '';
-            
             const reader = new FileReader();
             reader.onload = function(e) {
                 photoPreview.innerHTML = `
@@ -341,18 +369,6 @@ document.addEventListener('DOMContentLoaded', function() {
         } else {
             photoPreview.innerHTML = '';
             photoStatus.innerHTML = '';
-        }
-    });
-
-    // Form submit validation - ensure either photo uploaded or captured
-    form.addEventListener('submit', function(e) {
-        const hasFile = fileInput.files.length > 0;
-        const hasCamera = capturedPhotoData !== null;
-        
-        if (!hasFile && !hasCamera) {
-            e.preventDefault();
-            alert('Please upload a photo or capture one using the camera.');
-            return false;
         }
     });
 });

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Verify QR Code - Bodaboda SACCO{% endblock %}
+{% block title %}Verify QR Code - BBS (Busia Bodaboda SACCO){% endblock %}
 
 {% block content %}
 <div class="container py-4">
@@ -10,7 +10,7 @@
                 <i class="fas fa-qrcode text-gold"></i>
                 QR Code Verification
             </h2>
-            <p class="text-muted">Scan or enter QR code data to verify member details.</p>
+            <p class="text-muted">Scan or enter QR code data to verify member details. PIN-protected QR codes require the member's PIN.</p>
         </div>
     </div>
 
@@ -25,6 +25,16 @@
                             <textarea class="form-control" id="qr_data" name="qr_data" 
                                       rows="3" placeholder="Paste QR code data here or scan using your phone"></textarea>
                         </div>
+                        
+                        {% if pin_required or form.qr_pin.data %}
+                        <div class="mb-3">
+                            <label for="qr_pin" class="form-label required">QR PIN</label>
+                            <input type="password" class="form-control pin-input" id="qr_pin" name="qr_pin" 
+                                   placeholder="Enter 4-digit PIN" maxlength="4" pattern="[0-9]{4}" required>
+                            <small class="text-muted">Enter the member's 4-digit PIN to view their details.</small>
+                        </div>
+                        {% endif %}
+                        
                         <button type="submit" class="btn btn-gold w-100">
                             <i class="fas fa-search me-2"></i>Verify Member
                         </button>
@@ -46,8 +56,8 @@
                         </li>
                         <li class="list-group-item d-flex justify-content-between align-items-start">
                             <div class="ms-2 me-auto">
-                                <div class="fw-bold">Copy the Data</div>
-                                Copy the text data from the QR code scanner.
+                                <div class="fw-bold">Enter the PIN</div>
+                                If the QR code is PIN-protected, enter the member's 4-digit PIN.
                             </div>
                         </li>
                         <li class="list-group-item d-flex justify-content-between align-items-start">
@@ -66,7 +76,7 @@
                 </div>
             </div>
 
-            {% if member %}
+            {% if member and pin_verified %}
                 <div class="card mt-4 border-success">
                     <div class="card-header bg-success text-white">
                         <h5 class="mb-0"><i class="fas fa-check-circle me-2"></i>Member Verified</h5>
@@ -95,16 +105,23 @@
                                         <td><strong>Group/Stage:</strong></td>
                                         <td>{{ member.group_stage_name or 'N/A' }}</td>
                                     </tr>
+                                    <tr>
+                                        <td><strong>Motorcycle:</strong></td>
+                                        <td>{{ member.motorcycle_registration or 'N/A' }}</td>
+                                    </tr>
                                 </table>
                             </div>
                             <div class="col-md-6 text-center">
                                 <div class="alert alert-success">
                                     <i class="fas fa-check-circle fa-2x mb-2"></i>
-                                    <p class="mb-0">This member is verified and registered with <strong>{{ config.GROUP_NAME }}</strong></p>
+                                    <p class="mb-0">This member is verified and registered with <strong>BBS (Busia Bodaboda SACCO)</strong></p>
                                 </div>
-                                <a href="{{ url_for('view_badge', member_id=member.id) }}" class="btn btn-gold">
-                                    <i class="fas fa-id-card me-2"></i>View Badge
-                                </a>
+                                <div class="mt-2">
+                                    <span class="badge bg-success"><i class="fas fa-lock me-1"></i> PIN Verified</span>
+                                    <a href="{{ url_for('view_badge', member_id=member.id) }}" class="btn btn-gold btn-sm">
+                                        <i class="fas fa-id-card me-2"></i>View Badge
+                                    </a>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -144,6 +161,13 @@
     
     .list-group-item {
         background: transparent;
+    }
+    
+    .pin-input {
+        font-size: 1.5rem;
+        letter-spacing: 8px;
+        text-align: center;
+        font-weight: bold;
     }
 </style>
 {% endblock %}

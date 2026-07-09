@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Member Badge - Bodaboda SACCO{% endblock %}
+{% block title %}Member Badge - BBS (Busia Bodaboda SACCO){% endblock %}
 
 {% block content %}
 <div class="container py-4">
@@ -63,6 +63,16 @@
                                     </td>
                                 </tr>
                                 <tr>
+                                    <td><strong>QR PIN:</strong></td>
+                                    <td>
+                                        {% if has_pin %}
+                                            <span class="badge bg-info"><i class="fas fa-lock me-1"></i> Set</span>
+                                        {% else %}
+                                            <span class="badge bg-warning">Not Set</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                <tr>
                                     <td><strong>Issued Date:</strong></td>
                                     <td>{{ member.badge_issued_date|datetime if member.badge_issued_date else 'Not issued' }}</td>
                                 </tr>
@@ -99,6 +109,21 @@
                                 <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary">
                                     <i class="fas fa-arrow-left me-2"></i>Back
                                 </a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row mt-3 no-print">
+                        <div class="col-12">
+                            <h5>QR PIN Management</h5>
+                            <div class="d-flex flex-wrap gap-2">
+                                <a href="{{ url_for('change_qr_pin', member_id=member.id) }}" class="btn btn-outline-info">
+                                    <i class="fas fa-key me-2"></i>Change PIN
+                                </a>
+                                {% if current_user.role in ['admin', 'super_admin'] %}
+                                    <a href="{{ url_for('reset_qr_pin', member_id=member.id) }}" class="btn btn-outline-danger">
+                                        <i class="fas fa-user-shield me-2"></i>Admin Reset PIN
+                                    </a>
+                                {% endif %}
                             </div>
                         </div>
                     </div>
@@ -182,18 +207,15 @@
        PRINT STYLES - SINGLE PAGE ONLY
     ================================================================ */
     @media print {
-        /* Hide everything */
         .no-print {
             display: none !important;
         }
         
-        /* Hide navbar, footer, alerts, buttons */
         nav, footer, .navbar, .footer, .alert, .btn, 
         .card-header, .card-footer, .container-fluid {
             display: none !important;
         }
         
-        /* Reset body */
         body, html {
             margin: 0 !important;
             padding: 0 !important;
@@ -203,7 +225,6 @@
             min-height: 100% !important;
         }
         
-        /* Reset container */
         .container, .row, .col-lg-8, .col-12 {
             max-width: 100% !important;
             width: 100% !important;
@@ -212,7 +233,6 @@
             flex: 0 0 100% !important;
         }
         
-        /* Hide cards */
         .card {
             border: none !important;
             box-shadow: none !important;
@@ -227,7 +247,6 @@
             margin: 0 !important;
         }
         
-        /* Show only the print container */
         .print-container {
             display: block !important;
             position: absolute !important;
@@ -241,7 +260,6 @@
             z-index: 9999 !important;
         }
         
-        /* Badge image - full page */
         .badge-print-image {
             width: 100% !important;
             height: 100% !important;
@@ -257,21 +275,18 @@
             box-shadow: none !important;
         }
         
-        /* Force colors */
         * {
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
             color-adjust: exact !important;
         }
         
-        /* Single page */
         @page {
             size: auto !important;
             margin: 0 !important;
             padding: 0 !important;
         }
         
-        /* Prevent page breaks */
         .print-container, .badge-print-image {
             page-break-after: avoid !important;
             page-break-inside: avoid !important;

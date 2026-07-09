@@ -1,8 +1,8 @@
 # USER MANUAL
-## Busia County Bodaboda SACCO Badge Management System
+## BBS (Busia Bodaboda SACCO) Badge Management System
 
-**Version:** 1.0
-**Effective Date:** July 2026
+**Version:** 2.0
+**Effective Date:** July 9, 2026
 
 ---
 
@@ -12,33 +12,36 @@
 2. [Getting Started](#getting-started)
 3. [Dashboard Overview](#dashboard-overview)
 4. [Member Registration](#member-registration)
-5. [Badge Management](#badge-management)
+5. [QR PIN Management](#qr-pin-management)
 6. [QR Code Verification](#qr-code-verification)
-7. [Member Management](#member-management)
-8. [Batch Badge Issuance](#batch-badge-issuance)
-9. [Reports and Export](#reports-and-export)
-10. [Troubleshooting](#troubleshooting)
-11. [Support Contacts](#support-contacts)
+7. [Badge Management](#badge-management)
+8. [Member Management](#member-management)
+9. [Batch Badge Issuance](#batch-badge-issuance)
+10. [Reports and Export](#reports-and-export)
+11. [Troubleshooting](#troubleshooting)
+12. [Support Contacts](#support-contacts)
 
 ---
 
 ## 1. INTRODUCTION
 
 ### 1.1 Welcome
-Welcome to the Busia County Bodaboda SACCO Badge Management System. This system allows for efficient registration of bodaboda operators, generation of professional identification badges, and QR code verification.
+Welcome to the BBS (Busia Bodaboda SACCO) Badge Management System. This system allows for efficient registration of bodaboda operators, generation of professional identification badges, and QR code verification with PIN protection.
 
 ### 1.2 System Purpose
 - Register bodaboda operators in Busia County
 - Generate professional member identification badges
-- Enable QR code verification for members
+- Enable QR code verification with PIN protection
 - Track badge issuance and printing
 - Maintain accurate member records
+- **Protect member information with QR PINs**
 
 ### 1.3 Target Users
 - SACCO Administrators
 - SACCO Chairpersons
 - Member Registrars
 - Security/Verification Personnel
+- **Members (for PIN management)**
 
 ### 1.4 Contact Information
 - **Chairman:** Bonface Nyongesa Okumu - Tel: 0758488841
@@ -53,6 +56,7 @@ Welcome to the Busia County Bodaboda SACCO Badge Management System. This system 
 - Modern web browser (Chrome, Firefox, Safari, Edge)
 - Internet connection
 - Valid login credentials
+- **QR PIN (for verifying member QR codes)**
 
 ### 2.2 Accessing the System
 1. Open your web browser
@@ -81,7 +85,7 @@ After logging in, you will see:
 - **Register:** Register new members
 - **Members:** View and manage all members
 - **Batch Issue:** Generate multiple badges
-- **Verify QR:** Scan and verify member QR codes
+- **Verify QR:** Scan and verify member QR codes (requires PIN)
 - **Logout:** End your session
 
 ---
@@ -104,28 +108,110 @@ After logging in, you will see:
 - **Next of Kin Name:** Emergency contact name
 - **Next of Kin Phone:** Emergency contact phone
 
-**Step 3:** Upload passport photo
+**Step 3:** Set QR PIN:
+- Enter a 4-digit PIN (numbers only)
+- This PIN protects your member information
+- Keep this PIN confidential
+
+**Step 4:** Upload passport photo
 - Click "Choose File" under Passport Photo
 - Select a JPG, JPEG, or PNG image
 - Photo should be clear and passport-style
 
-**Step 4:** Click "Register" to submit
+**Step 5:** Click "Register" to submit
 
-**Step 5:** Wait for badge generation
-- System will generate QR code
+**Step 6:** Wait for badge generation
+- System will generate PIN-protected QR code
 - System will generate professional badge
 - Member is registered successfully!
 
 ---
 
-## 5. BADGE MANAGEMENT
+## 5. QR PIN MANAGEMENT
 
-### 5.1 Viewing a Badge
+### 5.1 What is a QR PIN?
+- A 4-digit personal identification number
+- Protects your QR code information
+- Required to view member details from QR code
+- Stored securely as a hash (never in plain text)
+
+### 5.2 Why is it Important?
+- Prevents unauthorized access to your information
+- Gives you control over who can verify your membership
+- Enhances overall system security
+
+### 5.3 Changing Your QR PIN
+
+**Step 1:** Go to your badge page
+**Step 2:** Click "Change PIN"
+**Step 3:** Enter your current PIN
+**Step 4:** Enter your National ID for verification
+**Step 5:** Enter and confirm your new PIN
+**Step 6:** Click "Change PIN"
+
+**Requirements:**
+- Current PIN must be correct
+- National ID must match your record
+- New PIN must be 4 digits
+- New PIN and confirmation must match
+
+### 5.4 PIN Security Tips
+- Choose a PIN that is easy to remember but hard to guess
+- Do not use obvious numbers (1234, 0000, your birth year)
+- Do not share your PIN with anyone
+- Change your PIN regularly
+- Contact admin immediately if PIN is compromised
+
+### 5.5 If You Forget Your PIN
+- Contact an administrator
+- Administrator will verify your identity
+- Administrator will reset your PIN
+- You will be notified of the reset
+- You can then change your PIN
+
+---
+
+## 6. QR CODE VERIFICATION
+
+### 6.1 Verification Process
+
+**Step 1:** Click "Verify QR" in navigation
+**Step 2:** Scan or enter QR code data
+**Step 3:** Enter the QR PIN (4 digits)
+**Step 4:** Click "Verify"
+**Step 5:** System displays member information
+
+### 6.2 What Verifiers See
+- Member Number
+- Full Name
+- National ID
+- Phone Number
+- Group/Stage
+- Chairman Name
+- Motorcycle Registration
+
+### 6.3 Verification Uses
+- Security checkpoints
+- Police verification
+- SACCO official verification
+- Event access control
+
+### 6.4 PIN Protection Notice
+- QR codes show a lock icon if PIN-protected
+- PIN is required to view any member details
+- Failed PIN attempts are logged
+- Multiple failures may trigger security alerts
+
+---
+
+## 7. BADGE MANAGEMENT
+
+### 7.1 Viewing a Badge
 
 **Option A:** Click on member name from dashboard
 **Option B:** Search for member and click "View Badge"
 
-### 5.2 Badge Actions
+### 7.2 Badge Actions
 
 **Download PNG:**
 - Click "Download PNG"
@@ -152,9 +238,8 @@ After logging in, you will see:
 - Creates a fresh badge image
 - Use if current badge is corrupted
 
-### 5.3 Badge Status
-
-The badge shows:
+### 7.3 Badge Features
+- **PIN-Protected QR Code:** Lock icon indicates PIN protection
 - **Member Number:** Unique identifier
 - **Full Name:** Member's complete name
 - **National ID:** ID number
@@ -162,62 +247,36 @@ The badge shows:
 - **Motorcycle:** Registration plate
 - **Group:** Operating location
 - **Chairman:** Group chairman
-- **QR Code:** Scannable verification code
 - **Date Issued:** Registration date
-- **Validity:** Valid until December 31, 2027
+- **Validity:** Valid until 5 years from issue date
 
 ---
 
-## 6. QR CODE VERIFICATION
+## 8. MEMBER MANAGEMENT
 
-### 6.1 Verification Process
-1. Click "Verify QR" in navigation
-2. Scan or enter QR code data
-3. Click "Verify"
-4. System displays member information
-5. Confirms membership status
-
-### 6.2 Verification Uses
-- Security checkpoints
-- Police verification
-- SACCO official verification
-- Event access control
-
-### 6.3 What Verifiers See
-- Member Number
-- Full Name
-- National ID
-- Phone Number
-- Group/Stage
-- Badge Status (Issued/Pending)
-- Issuance Date
-
----
-
-## 7. MEMBER MANAGEMENT
-
-### 7.1 Viewing All Members
+### 8.1 Viewing All Members
 - Go to "Members" or "Dashboard"
 - View list of all registered members
 - Columns show key information
 
-### 7.2 Searching Members
+### 8.2 Searching Members
 - Use search bar in dashboard
 - Search by name, member number, or ID
 - Results appear instantly
 
-### 7.3 Filtering Members
+### 8.3 Filtering Members
 - **All:** Shows all members
 - **Issued:** Shows members with badges issued
 - **Unissued:** Shows members pending badge issuance
 
-### 7.4 Editing Member Details
+### 8.4 Editing Member Details
 1. Click "Edit" next to member
 2. Update any field
-3. Click "Save"
-4. Badge auto-regenerates
+3. Update QR PIN if needed
+4. Click "Save"
+5. Badge auto-regenerates
 
-### 7.5 Deleting a Member
+### 8.5 Deleting a Member
 1. Click "Delete" next to member
 2. Confirm deletion
 3. Member and badge are removed
@@ -225,14 +284,14 @@ The badge shows:
 
 ---
 
-## 8. BATCH BADGE ISSUANCE
+## 9. BATCH BADGE ISSUANCE
 
-### 8.1 When to Use Batch Issuance
+### 9.1 When to Use Batch Issuance
 - New member onboarding
 - Mass badge generation
 - Replacing lost badges
 
-### 8.2 How to Issue Batch Badges
+### 9.2 How to Issue Batch Badges
 1. Click "Batch Issue" in navigation
 2. Select print format:
    - PNG only
@@ -247,7 +306,7 @@ The badge shows:
 6. Download the ZIP file
 7. Extract and print badges
 
-### 8.3 Important Notes
+### 9.3 Important Notes
 - Only unissued members are included
 - Existing badges are not regenerated
 - ZIP file contains all selected formats
@@ -255,15 +314,15 @@ The badge shows:
 
 ---
 
-## 9. REPORTS AND EXPORT
+## 10. REPORTS AND EXPORT
 
-### 9.1 Exporting Member Data
+### 10.1 Exporting Member Data
 1. Go to "Export" or "Dashboard"
 2. Click "Export CSV"
 3. CSV file downloads automatically
 4. Open in Excel or similar software
 
-### 9.2 Export Contents
+### 10.2 Export Contents
 - Member Number
 - Full Name
 - National ID
@@ -272,8 +331,9 @@ The badge shows:
 - Chairman Name
 - Badge Issued (Yes/No)
 - Date Registered
+- **QR PIN Set (Yes/No)**
 
-### 9.3 Usage of Exports
+### 10.3 Usage of Exports
 - SACCO membership reports
 - Government reporting
 - Internal records
@@ -281,9 +341,9 @@ The badge shows:
 
 ---
 
-## 10. TROUBLESHOOTING
+## 11. TROUBLESHOOTING
 
-### 10.1 Common Issues and Solutions
+### 11.1 Common Issues and Solutions
 
 **Cannot Login**
 - Check username and password
@@ -302,6 +362,12 @@ The badge shows:
 - Try different lighting
 - Regenerate badge
 
+**QR PIN Not Working**
+- Ensure you are entering the correct PIN
+- PIN must be 4 digits
+- Contact admin if PIN is forgotten
+- Check if PIN was reset by admin
+
 **Photo Upload Fails**
 - Check file size (max 16MB)
 - Use JPG, JPEG, or PNG format
@@ -312,7 +378,7 @@ The badge shows:
 - Reduce search results (be more specific)
 - Try using incognito/private mode
 
-### 10.2 Error Messages
+### 11.2 Error Messages
 
 | Error | Solution |
 |-------|----------|
@@ -321,12 +387,15 @@ The badge shows:
 | "Invalid photo file" | Use JPG, JPEG, or PNG |
 | "Badge file not found" | Regenerate badge |
 | "Database connection error" | Contact support |
+| **"Invalid PIN"** | Enter correct 4-digit PIN |
+| **"PIN required"** | Enter the member's QR PIN |
+| **"PIN reset by admin"** | Contact admin for new PIN |
 
 ---
 
-## 11. SUPPORT CONTACTS
+## 12. SUPPORT CONTACTS
 
-### 11.1 Primary Contacts
+### 12.1 Primary Contacts
 
 **SACCO Chairman:**
 - **Name:** Bonface Nyongesa Okumu
@@ -343,65 +412,75 @@ The badge shows:
 - **Phone:** 0701207062
 - **Role:** Technical support
 
-### 11.2 Support Hours
+### 12.2 Support Hours
 - **Official Hours:** Monday to Friday, 8:00 AM - 5:00 PM EAT
 - **Emergency Support:** Available via phone
 
-### 11.3 What to Report
+### 12.3 What to Report
 - System errors
 - Data discrepancies
 - Access issues
 - Feature requests
 - Security concerns
+- **PIN-related issues**
 
 ---
 
-## 12. BEST PRACTICES
+## 13. BEST PRACTICES
 
-### 12.1 For Administrators
+### 13.1 For Administrators
 - Change default password immediately
 - Backup member data regularly
 - Keep member information current
 - Train new administrators
+- **Handle PIN resets with proper verification**
 
-### 12.2 For Members
+### 13.2 For Members
 - Protect your badge and QR code
 - Report changes to your information
 - Report lost badges immediately
 - Present badge when requested
+- **Keep your QR PIN confidential**
+- **Change your PIN regularly**
+- **Report compromised PINs immediately**
 
-### 12.3 Security Tips
+### 13.3 Security Tips
 - Use strong passwords
 - Log out after each session
 - Don't share credentials
 - Report suspicious activity
+- **Never share your QR PIN**
+- **Be aware of who scans your QR code**
 
 ---
 
-## 13. GLOSSARY
+## 14. GLOSSARY
 
 | Term | Definition |
 |------|------------|
 | **Badge** | Digital identification card |
 | **QR Code** | Quick Response code for verification |
+| **QR PIN** | 4-digit personal identification number for QR protection |
 | **SACCO** | Savings and Credit Cooperative Organization |
 | **Bodaboda** | Motorcycle taxi operator |
 | **Bleed** | Extra margin for professional printing |
 | **Crop Marks** | Print guides for cutting |
 | **Member Number** | Unique identifier for each member |
 | **DPI** | Dots per inch (print quality measurement) |
+| **Encryption** | Process of converting data to secure format |
 
 ---
 
-## 14. VERSION HISTORY
+## 15. VERSION HISTORY
 
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | July 2026 | Initial release |
+| 2.0 | July 9, 2026 | Added QR PIN protection section |
 
 ---
 
-## 15. ACKNOWLEDGMENT
+## 16. ACKNOWLEDGMENT
 
 By using this system, you acknowledge that you have read, understood, and agree to follow this User Manual.
 
