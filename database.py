@@ -128,11 +128,14 @@ class Database:
 db = Database()
 
 def init_database():
-    """Initialize database tables with issuance tracking and authentication"""
+    """Initialize database tables with all columns including QR PIN"""
     logger.info("Initializing database tables...")
     
+    # ============================================================
+    # STEP 1: Create tables with all columns (if they don't exist)
+    # ============================================================
     create_table_sql = """
-    -- Members table
+    -- Members table with all columns including QR PIN
     CREATE TABLE IF NOT EXISTS members (
         id SERIAL PRIMARY KEY,
         member_number VARCHAR(50) UNIQUE NOT NULL,
@@ -157,6 +160,7 @@ def init_database():
         card_type VARCHAR(50) DEFAULT 'standard',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        -- QR PIN columns
         qr_pin_hash VARCHAR(200) DEFAULT NULL,
         qr_pin_set_at TIMESTAMP DEFAULT NULL,
         qr_pin_attempts INTEGER DEFAULT 0,
@@ -244,11 +248,81 @@ def init_database():
     
     try:
         with db.get_cursor() as cur:
+            # Create tables
             cur.execute(create_table_sql)
             logger.info("Database tables created successfully")
             
-            # Create default admin user with proper password hash
-            # Password: Admin@2024
+            # ============================================================
+            # STEP 2: Check and add missing columns (for existing databases)
+            # ============================================================
+            logger.info("Checking for missing columns...")
+            
+            # Check if QR PIN columns exist
+            cur.execute("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'members' 
+                AND column_name LIKE 'qr_pin%'
+            """)
+            existing_columns = [row[0] for row in cur.fetchall()]
+            
+            # Define expected QR PIN columns
+            expected_columns = ['qr_pin_hash', 'qr_pin_set_at', 'qr_pin_attempts', 'qr_pin_locked_until']
+            
+            # Add missing columns
+            for col in expected_columns:
+                if col not in existing_columns:
+                    col_type = {
+                        'qr_pin_hash': 'VARCHAR(200) DEFAULT NULL',
+                        'qr_pin_set_at': 'TIMESTAMP DEFAULT NULL',
+                        'qr_pin_attempts': 'INTEGER DEFAULT 0',
+                        'qr_pin_locked_until': 'TIMESTAMP DEFAULT NULL'
+                    }[col]
+                    
+                    try:
+                        cur.execute(f"ALTER TABLE members ADD COLUMN IF NOT EXISTS {col} {col_type}")
+                        logger.info(f"Added missing column: {col}")
+                    except Exception as e:
+                        logger.warning(f"Could not add column {col}: {e}")
+            
+            # Check and create QR PIN log tables if they don't exist
+            cur.execute("""
+                SELECT table_name 
+                FROM information_schema.tables 
+                WHERE table_name IN ('qr_pin_verification_log', 'qr_pin_change_log')
+            """)
+            existing_tables = [row[0] for row in cur.fetchall()]
+            
+            if 'qr_pin_verification_log' not in existing_tables:
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS qr_pin_verification_log (
+                        id SERIAL PRIMARY KEY,
+                        member_id INTEGER REFERENCES members(id) ON DELETE CASCADE,
+                        verified_by VARCHAR(100),
+                        verification_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        success BOOLEAN DEFAULT TRUE,
+                        ip_address VARCHAR(50),
+                        user_agent TEXT
+                    )
+                """)
+                logger.info("Created qr_pin_verification_log table")
+            
+            if 'qr_pin_change_log' not in existing_tables:
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS qr_pin_change_log (
+                        id SERIAL PRIMARY KEY,
+                        member_id INTEGER REFERENCES members(id) ON DELETE CASCADE,
+                        changed_by VARCHAR(100),
+                        change_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        change_type VARCHAR(20),
+                        notes TEXT
+                    )
+                """)
+                logger.info("Created qr_pin_change_log table")
+            
+            # ============================================================
+            # STEP 3: Create default admin user
+            # ============================================================
             password_hash = bcrypt.generate_password_hash('Admin@2024').decode('utf-8')
             
             cur.execute("""
@@ -259,8 +333,20 @@ def init_database():
             
             logger.info("Default admin user created (username: admin, password: Admin@2024)")
             
+            # ============================================================
+            # STEP 4: Verify migration
+            # ============================================================
+            cur.execute("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'members' 
+                AND column_name LIKE 'qr_pin%'
+            """)
+            final_columns = [row[0] for row in cur.fetchall()]
+            logger.info(f"QR PIN columns present: {final_columns}")
+            
     except Exception as e:
-        logger.error(f"Error creating tables: {e}")
+        logger.error(f"Error initializing database: {e}")
         raise
 
 # ============================================================
