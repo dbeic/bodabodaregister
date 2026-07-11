@@ -1,140 +1,248 @@
 {% extends "base.html" %}
 
-{% block title %}Member Badge - BBS (Busia Bodaboda SACCO){% endblock %}
+{% block title %}Badge - {{ member.full_name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .badge-display {
+        max-width: 100%;
+        margin: 0 auto;
+        text-align: center;
+    }
+    
+    .badge-display img {
+        max-width: 100%;
+        height: auto;
+        border-radius: 10px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+    }
+    
+    .badge-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        justify-content: center;
+    }
+    
+    .badge-actions .btn {
+        min-width: 120px;
+    }
+    
+    .info-section {
+        background: #f8f9fa;
+        border-radius: 10px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+    }
+    
+    .info-section .label {
+        font-weight: 600;
+        color: var(--dark-blue);
+        font-size: 0.9rem;
+    }
+    
+    .info-section .value {
+        color: #333;
+        font-size: 1rem;
+    }
+    
+    .pin-status {
+        display: inline-block;
+        padding: 0.25rem 0.75rem;
+        border-radius: 20px;
+        font-size: 0.85rem;
+    }
+    
+    .pin-status.has-pin {
+        background: #d4edda;
+        color: #155724;
+    }
+    
+    .pin-status.no-pin {
+        background: #f8d7da;
+        color: #721c24;
+    }
+</style>
+{% endblock %}
 
 {% block content %}
 <div class="container py-4">
     <div class="row">
         <div class="col-12">
-            <h2 class="no-print">
+            <h2 class="mb-4">
                 <i class="fas fa-id-card text-gold"></i>
-                Member Identification Badge
+                Member Badge
             </h2>
-            <p class="text-muted no-print">View, download, and print the member identification badge.</p>
+            <p class="text-muted">
+                View and manage badge for <strong>{{ member.full_name }}</strong> ({{ member.member_number }})
+            </p>
         </div>
     </div>
 
     <div class="row">
-        <div class="col-lg-8 mx-auto">
-            <!-- Member Info -->
-            <div class="card mb-4 no-print">
-                <div class="card-body">
-                    <div class="row">
-                        <div class="col-md-6">
-                            <h5>Member Details</h5>
-                            <table class="table table-sm">
-                                <tr>
-                                    <td><strong>Member Number:</strong></td>
-                                    <td>{{ member.member_number }}</td>
-                                </tr>
-                                <tr>
-                                    <td><strong>Full Name:</strong></td>
-                                    <td>{{ member.full_name }}</td>
-                                </tr>
-                                <tr>
-                                    <td><strong>National ID:</strong></td>
-                                    <td>{{ member.national_id }}</td>
-                                </tr>
-                                <tr>
-                                    <td><strong>Telephone:</strong></td>
-                                    <td>{{ member.telephone }}</td>
-                                </tr>
-                                <tr>
-                                    <td><strong>Group/Stage:</strong></td>
-                                    <td>{{ member.group_stage_name or 'N/A' }}</td>
-                                </tr>
-                                <tr>
-                                    <td><strong>Motorcycle:</strong></td>
-                                    <td>{{ member.motorcycle_registration or 'N/A' }}</td>
-                                </tr>
-                            </table>
+        <!-- Badge Display -->
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-body badge-display">
+                    {% if member.badge_image %}
+                        <img src="{{ url_for('static', filename='badges/' + member.badge_image) }}" 
+                             alt="Badge for {{ member.full_name }}"
+                             class="img-fluid">
+                    {% else %}
+                        <div class="text-center py-5">
+                            <i class="fas fa-id-card fa-5x text-muted"></i>
+                            <p class="mt-3 text-muted">No badge generated yet.</p>
+                            <a href="{{ url_for('regenerate_badge', member_id=member.id) }}" class="btn btn-gold">
+                                <i class="fas fa-sync me-2"></i>Generate Badge
+                            </a>
                         </div>
-                        <div class="col-md-6">
-                            <h5>Badge Status</h5>
-                            <table class="table table-sm">
-                                <tr>
-                                    <td><strong>Status:</strong></td>
-                                    <td>
-                                        {% if member.badge_issued %}
-                                            <span class="badge bg-success">Issued</span>
-                                        {% else %}
-                                            <span class="badge bg-warning">Pending</span>
-                                        {% endif %}
-                                    </td>
-                                </tr>
-                                <tr>
-                                    <td><strong>Issued Date:</strong></td>
-                                    <td>{{ member.badge_issued_date|datetime if member.badge_issued_date else 'Not issued' }}</td>
-                                </tr>
-                                <tr>
-                                    <td><strong>Print Count:</strong></td>
-                                    <td>{{ member.badge_print_count or 0 }}</td>
-                                </tr>
-                                <tr>
-                                    <td><strong>Last Printed:</strong></td>
-                                    <td>{{ member.last_printed|datetime if member.last_printed else 'Never' }}</td>
-                                </tr>
-                                <tr>
-                                    <td><strong>QR PIN:</strong></td>
-                                    <td>
-                                        {% if has_pin %}
-                                            <span class="badge bg-success"><i class="fas fa-lock"></i> Protected</span>
-                                        {% else %}
-                                            <span class="badge bg-secondary"><i class="fas fa-unlock"></i> Not Set</span>
-                                        {% endif %}
-                                    </td>
-                                </tr>
-                            </table>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Member Info -->
+        <div class="col-lg-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="fas fa-user me-2"></i>Member Details
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="info-section">
+                        <div class="label">Member Number</div>
+                        <div class="value">{{ member.member_number }}</div>
+                    </div>
+                    
+                    <div class="info-section">
+                        <div class="label">Full Name</div>
+                        <div class="value">{{ member.full_name }}</div>
+                    </div>
+                    
+                    <div class="info-section">
+                        <div class="label">National ID</div>
+                        <div class="value">{{ member.national_id }}</div>
+                    </div>
+                    
+                    <div class="info-section">
+                        <div class="label">Telephone</div>
+                        <div class="value">{{ member.telephone }}</div>
+                    </div>
+                    
+                    <div class="info-section">
+                        <div class="label">Group/Stage</div>
+                        <div class="value">{{ member.group_stage_name or 'N/A' }}</div>
+                    </div>
+                    
+                    <div class="info-section">
+                        <div class="label">Motorcycle</div>
+                        <div class="value">{{ member.motorcycle_registration or 'N/A' }}</div>
+                    </div>
+                    
+                    <div class="info-section">
+                        <div class="label">Chairman</div>
+                        <div class="value">{{ member.chairman_name or 'N/A' }}</div>
+                    </div>
+                    
+                    <div class="info-section">
+                        <div class="label">Date Registered</div>
+                        <div class="value">{{ member.date_registered.strftime('%Y-%m-%d') if member.date_registered else 'N/A' }}</div>
+                    </div>
+                    
+                    <div class="info-section">
+                        <div class="label">Badge Status</div>
+                        <div class="value">
+                            {% if member.badge_issued %}
+                                <span class="badge bg-success">Issued</span>
+                            {% else %}
+                                <span class="badge bg-warning">Pending</span>
+                            {% endif %}
                         </div>
                     </div>
-                    <div class="row mt-3 no-print">
-                        <div class="col-12">
-                            <h5>Actions</h5>
-                            <div class="d-flex flex-wrap gap-2">
-                                <a href="{{ url_for('download_badge', member_id=member.id) }}" class="btn btn-gold">
-                                    <i class="fas fa-download me-2"></i>Download PNG
-                                </a>
-                                <a href="{{ url_for('download_badge', member_id=member.id, format='pdf') }}" class="btn btn-outline-primary">
-                                    <i class="fas fa-file-pdf me-2"></i>Download PDF
-                                </a>
-                                <a href="{{ url_for('download_badge', member_id=member.id, bleed='true') }}" class="btn btn-outline-success">
-                                    <i class="fas fa-cut me-2"></i>With Bleed
-                                </a>
-                                <a href="#" onclick="window.print()" class="btn btn-outline-secondary">
-                                    <i class="fas fa-print me-2"></i>Print
-                                </a>
-                                <a href="{{ url_for('regenerate_badge', member_id=member.id) }}" class="btn btn-outline-warning">
-                                    <i class="fas fa-sync me-2"></i>Regenerate
-                                </a>
-                                <!-- QR PIN Management -->
-                                {% if has_pin %}
-                                    <a href="{{ url_for('change_qr_pin', member_id=member.id) }}" class="btn btn-outline-info">
-                                        <i class="fas fa-key me-2"></i>Change PIN
-                                    </a>
-                                {% endif %}
-                                {% if current_user.role in ['admin', 'super_admin'] %}
-                                    <a href="{{ url_for('admin_reset_qr_pin', member_id=member.id) }}" class="btn btn-outline-danger">
-                                        <i class="fas fa-user-shield me-2"></i>Admin Reset PIN
-                                    </a>
-                                {% endif %}
-                                <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary">
-                                    <i class="fas fa-arrow-left me-2"></i>Back
-                                </a>
-                            </div>
+                    
+                    <div class="info-section">
+                        <div class="label">QR PIN Protection</div>
+                        <div class="value">
+                            {% if has_pin %}
+                                <span class="pin-status has-pin">
+                                    <i class="fas fa-lock me-1"></i>Protected
+                                </span>
+                            {% else %}
+                                <span class="pin-status no-pin">
+                                    <i class="fas fa-unlock me-1"></i>Not Set
+                                </span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    
+                    <div class="info-section">
+                        <div class="label">QR Token</div>
+                        <div class="value">
+                            <code class="small">{{ member.qr_code_data or 'Not generated' }}</code>
                         </div>
                     </div>
                 </div>
             </div>
+        </div>
+    </div>
 
-            <!-- Issuance Log -->
-            {% if issuance_log %}
-            <div class="card mb-4 no-print">
+    <!-- Actions -->
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card">
                 <div class="card-header">
-                    <h5 class="mb-0"><i class="fas fa-history me-2"></i>Issuance History</h5>
+                    <h5 class="mb-0">
+                        <i class="fas fa-tools me-2"></i>Actions
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="badge-actions">
+                        <a href="{{ url_for('download_badge', member_id=member.id) }}" class="btn btn-gold">
+                            <i class="fas fa-download me-2"></i>Download PNG
+                        </a>
+                        <a href="{{ url_for('download_badge', member_id=member.id, format='pdf') }}" class="btn btn-primary">
+                            <i class="fas fa-file-pdf me-2"></i>Download PDF
+                        </a>
+                        <a href="{{ url_for('regenerate_badge', member_id=member.id) }}" class="btn btn-warning">
+                            <i class="fas fa-sync me-2"></i>Regenerate
+                        </a>
+                        <a href="{{ url_for('regenerate_qr', member_id=member.id) }}" class="btn btn-info">
+                            <i class="fas fa-qrcode me-2"></i>Regenerate QR
+                        </a>
+                        <a href="{{ url_for('edit_member', member_id=member.id) }}" class="btn btn-secondary">
+                            <i class="fas fa-edit me-2"></i>Edit
+                        </a>
+                        {% if has_pin %}
+                            <a href="{{ url_for('change_qr_pin', member_id=member.id) }}" class="btn btn-outline-warning">
+                                <i class="fas fa-key me-2"></i>Change PIN
+                            </a>
+                            <a href="{{ url_for('admin_reset_qr_pin', member_id=member.id) }}" class="btn btn-outline-danger">
+                                <i class="fas fa-user-shield me-2"></i>Admin Reset PIN
+                            </a>
+                        {% endif %}
+                        <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary">
+                            <i class="fas fa-arrow-left me-2"></i>Back
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Issuance Log -->
+    {% if issuance_log %}
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="fas fa-history me-2"></i>Badge Issuance Log
+                    </h5>
                 </div>
                 <div class="card-body">
                     <div class="table-responsive">
-                        <table class="table table-sm table-hover">
+                        <table class="table table-sm">
                             <thead>
                                 <tr>
                                     <th>Date</th>
@@ -146,148 +254,35 @@
                             </thead>
                             <tbody>
                                 {% for log in issuance_log %}
-                                <tr>
-                                    <td>{{ log.issued_date|datetime }}</td>
-                                    <td>{{ log.issued_by or 'N/A' }}</td>
-                                    <td>{{ log.print_format or 'N/A' }}</td>
-                                    <td>{{ log.print_quality or 'N/A' }}</td>
-                                    <td>{{ log.notes or '' }}</td>
-                                </tr>
+                                    <tr>
+                                        <td>{{ log.issued_date.strftime('%Y-%m-%d %H:%M') if log.issued_date else 'N/A' }}</td>
+                                        <td>{{ log.issued_by or 'System' }}</td>
+                                        <td>{{ log.print_format or 'N/A' }}</td>
+                                        <td>{{ log.print_quality or 'N/A' }}</td>
+                                        <td>{{ log.notes or 'N/A' }}</td>
+                                    </tr>
                                 {% endfor %}
                             </tbody>
                         </table>
                     </div>
                 </div>
             </div>
-            {% endif %}
-
-            <!-- Badge Display - ONLY THIS PRINTS -->
-            <div class="print-container">
-                {% if member.badge_image %}
-                    <img src="{{ url_for('static', filename='badges/' + member.badge_image) }}" 
-                         alt="Member Badge" 
-                         class="badge-print-image">
-                {% else %}
-                    <div class="alert alert-warning">
-                        <i class="fas fa-exclamation-triangle me-2"></i>
-                        No badge has been generated for this member yet.
-                    </div>
-                    <a href="{{ url_for('regenerate_badge', member_id=member.id) }}" class="btn btn-gold">
-                        <i class="fas fa-id-card me-2"></i>Generate Badge
-                    </a>
-                {% endif %}
-            </div>
         </div>
     </div>
+    {% endif %}
 </div>
 
 <style>
-    .text-gold { color: var(--gold); }
-    .btn-gold { background-color: var(--gold); color: white; }
-    .btn-gold:hover { background-color: #c9a84a; color: white; }
-    .badge-print-image {
-        width: 100%;
-        max-width: 100%;
-        height: auto;
-        display: block;
-        margin: 0 auto;
+    .text-gold {
+        color: var(--gold);
     }
-    
-    .print-container {
-        padding: 0;
-        margin: 0;
-        background: white;
+    .btn-gold {
+        background-color: var(--gold);
+        color: white;
     }
-
-    /* ================================================================
-       PRINT STYLES - SINGLE PAGE ONLY
-    ================================================================ */
-    @media print {
-        .no-print {
-            display: none !important;
-        }
-        
-        nav, footer, .navbar, .footer, .alert, .btn, 
-        .card-header, .card-footer, .container-fluid {
-            display: none !important;
-        }
-        
-        body, html {
-            margin: 0 !important;
-            padding: 0 !important;
-            background: white !important;
-            width: 100% !important;
-            height: 100% !important;
-            min-height: 100% !important;
-        }
-        
-        .container, .row, .col-lg-8, .col-12 {
-            max-width: 100% !important;
-            width: 100% !important;
-            padding: 0 !important;
-            margin: 0 !important;
-            flex: 0 0 100% !important;
-        }
-        
-        .card {
-            border: none !important;
-            box-shadow: none !important;
-            border-radius: 0 !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            background: transparent !important;
-        }
-        
-        .card-body {
-            padding: 0 !important;
-            margin: 0 !important;
-        }
-        
-        .print-container {
-            display: block !important;
-            position: absolute !important;
-            top: 0 !important;
-            left: 0 !important;
-            width: 100% !important;
-            height: 100% !important;
-            padding: 0 !important;
-            margin: 0 !important;
-            background: white !important;
-            z-index: 9999 !important;
-        }
-        
-        .badge-print-image {
-            width: 100% !important;
-            height: 100% !important;
-            max-width: 100% !important;
-            max-height: 100% !important;
-            object-fit: contain !important;
-            object-position: center !important;
-            display: block !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            border: none !important;
-            border-radius: 0 !important;
-            box-shadow: none !important;
-        }
-        
-        * {
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-            color-adjust: exact !important;
-        }
-        
-        @page {
-            size: auto !important;
-            margin: 0 !important;
-            padding: 0 !important;
-        }
-        
-        .print-container, .badge-print-image {
-            page-break-after: avoid !important;
-            page-break-inside: avoid !important;
-            break-inside: avoid !important;
-        }
+    .btn-gold:hover {
+        background-color: #c9a84a;
+        color: white;
     }
 </style>
 {% endblock %}

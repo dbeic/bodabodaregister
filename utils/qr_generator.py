@@ -20,26 +20,22 @@ class QRGenerator:
     def generate_qr(member_data, include_photo=False):
         """
         Generate QR code for member with enhanced styling
-        Now generates a secure token that references the member, not containing personal data
+        Returns the token string and filepath
         
         Args:
             member_data: Dictionary containing member information
             include_photo: Whether to include member photo in QR center
         
         Returns:
-            tuple: (filepath, filename)
+            tuple: (filepath, filename, token_string)
         """
         try:
             # Generate a unique token for this member
-            # This token will be used to look up the member in the database
             member_number = member_data['member_number']
             
             # Create a secure token that references the member
             # Format: BBS-{member_number}-{uuid_short}
-            token_id = f"BBS-{member_number}-{uuid.uuid4().hex[:8].upper()}"
-            
-            # Store the token in the member data for reference
-            qr_data = token_id
+            token_string = f"BBS-{member_number}-{uuid.uuid4().hex[:8].upper()}"
             
             # Generate QR code with high error correction
             qr = qrcode.QRCode(
@@ -48,7 +44,7 @@ class QRGenerator:
                 box_size=10,
                 border=4,
             )
-            qr.add_data(qr_data)
+            qr.add_data(token_string)
             qr.make(fit=True)
             
             # Create styled QR image with gradient
@@ -91,8 +87,8 @@ class QRGenerator:
             filepath = os.path.join(Config.QR_FOLDER, filename)
             img.save(filepath, 'PNG', quality=95)
             
-            logger.info(f"QR code generated for member: {member_data['member_number']} with token: {token_id}")
-            return filepath, filename
+            logger.info(f"QR code generated for member: {member_data['member_number']} with token: {token_string}")
+            return filepath, filename, token_string
             
         except Exception as e:
             logger.error(f"Error generating QR code: {e}")
@@ -100,7 +96,7 @@ class QRGenerator:
     
     @staticmethod
     def generate_qr_verification_data(member):
-        """Generate QR verification data - now returns the token"""
+        """Generate QR verification data"""
         return {
             'member_number': member['member_number'],
             'full_name': member['full_name'],
@@ -117,11 +113,12 @@ class QRGenerator:
         results = []
         for member in members:
             try:
-                qr_path, qr_filename = QRGenerator.generate_qr(member)
+                qr_path, qr_filename, token = QRGenerator.generate_qr(member)
                 results.append({
                     'member_number': member['member_number'],
                     'qr_path': qr_path,
                     'qr_filename': qr_filename,
+                    'token': token,
                     'success': True
                 })
             except Exception as e:
@@ -131,3 +128,19 @@ class QRGenerator:
                     'success': False
                 })
         return results
+    
+    @staticmethod
+    def regenerate_qr(member_data, include_photo=False):
+        """Regenerate QR code for an existing member"""
+        # Remove old QR file if it exists
+        old_filename = f"qr_{member_data['member_number']}.png"
+        old_path = os.path.join(Config.QR_FOLDER, old_filename)
+        if os.path.exists(old_path):
+            try:
+                os.remove(old_path)
+                logger.info(f"Removed old QR code: {old_path}")
+            except Exception as e:
+                logger.warning(f"Could not remove old QR code: {e}")
+        
+        # Generate new QR code
+        return QRGenerator.generate_qr(member_data, include_photo)

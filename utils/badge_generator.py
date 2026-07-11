@@ -18,6 +18,7 @@ class BadgeGenerator:
     def generate_badge(member_data, include_bleed=False, watermark=True):
         """
         Generate professional ID badge with security features
+        Includes QR code generation with proper token storage
         """
         try:
             width = Config.BADGE_WIDTH
@@ -261,7 +262,9 @@ class BadgeGenerator:
                          font=value_font, anchor='mm')
             
             # --- QR CODE SECTION (Below Photo) - INCREASED 25% ---
-            qr_path, qr_filename = QRGenerator.generate_qr(member_data, include_photo=True)
+            # Generate QR and get token
+            qr_path, qr_filename, qr_token = QRGenerator.generate_qr(member_data, include_photo=True)
+            
             if os.path.exists(qr_path):
                 try:
                     qr_img = Image.open(qr_path)
@@ -446,8 +449,8 @@ class BadgeGenerator:
             filepath = os.path.join(Config.BADGE_FOLDER, filename)
             img.save(filepath, 'PNG', quality=95, dpi=(Config.BADGE_DPI, Config.BADGE_DPI))
             
-            logger.info(f"Security badge generated for member: {member_data['member_number']}")
-            return filepath, filename
+            logger.info(f"Security badge generated for member: {member_data['member_number']} with QR token: {qr_token}")
+            return filepath, filename, qr_token
             
         except Exception as e:
             logger.error(f"Error generating badge: {e}")
@@ -508,11 +511,12 @@ class BadgeGenerator:
         results = {}
         for member in members:
             try:
-                badge_path, badge_filename = BadgeGenerator.generate_badge(member, include_bleed)
+                badge_path, badge_filename, qr_token = BadgeGenerator.generate_badge(member, include_bleed)
                 results[member['member_number']] = {
                     'success': True,
                     'path': badge_path,
-                    'filename': badge_filename
+                    'filename': badge_filename,
+                    'qr_token': qr_token
                 }
                 logger.info(f"Batch badge generated for: {member['member_number']}")
             except Exception as e:

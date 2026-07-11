@@ -11,7 +11,7 @@ from datetime import datetime, timezone, timedelta
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_file, send_from_directory, make_response, session
 from flask_wtf import FlaskForm
 from wtforms import StringField, FileField, HiddenField, SelectField, BooleanField, PasswordField, IntegerField
-from wtforms.validators import DataRequired, Length, Optional, NumberRange, ValidationError
+from wtforms.validators import DataRequired, Length, Optional, NumberRange, ValidationError, EqualTo
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from flask_bcrypt import Bcrypt
 from flask_wtf.csrf import CSRFProtect
@@ -30,7 +30,8 @@ from database import (
     update_admin_password, log_admin_login,
     update_last_login,
     set_qr_pin, get_qr_pin_hash, verify_qr_pin,
-    log_qr_pin_verification, log_qr_pin_change, has_qr_pin
+    log_qr_pin_verification, log_qr_pin_change, has_qr_pin,
+    get_member_by_qr_token
 )
 from utils.qr_generator import QRGenerator
 from utils.image_processor import ImageProcessor
@@ -124,6 +125,46 @@ def add_security_headers(response):
     response.headers['Expires'] = '0'
     return response
 
+# ============================================================
+# PWA CONFIGURATION
+# ============================================================
+
+@app.route('/manifest.json')
+def manifest():
+    """PWA manifest file"""
+    return jsonify({
+        "name": "BBS Badge Management System",
+        "short_name": "BBS Badge",
+        "description": "Busia Bodaboda SACCO Badge Management System",
+        "start_url": "/",
+        "display": "standalone",
+        "background_color": "#1a3a5c",
+        "theme_color": "#d4af37",
+        "orientation": "portrait-primary",
+        "icons": [
+            {
+                "src": "/static/images/icon-192.png",
+                "sizes": "192x192",
+                "type": "image/png",
+                "purpose": "any maskable"
+            },
+            {
+                "src": "/static/images/icon-512.png",
+                "sizes": "512x512",
+                "type": "image/png",
+                "purpose": "any maskable"
+            }
+        ]
+    })
+
+@app.route('/sw.js')
+def service_worker():
+    """Service worker for PWA"""
+    response = make_response(send_from_directory('static', 'sw.js'))
+    response.headers['Content-Type'] = 'application/javascript'
+    response.headers['Service-Worker-Allowed'] = '/'
+    return response
+
 # ----------------------------
 # User Class for Flask-Login
 # ----------------------------
@@ -181,16 +222,19 @@ class QRVerificationForm(FlaskForm):
     qr_data = StringField('QR Data', validators=[DataRequired()])
 
 class QRPinVerificationForm(FlaskForm):
+    qr_data = HiddenField('QR Data', validators=[DataRequired()])
     pin = StringField('PIN', validators=[DataRequired(), validate_pin_length])
 
 class QRPinChangeForm(FlaskForm):
     current_pin = StringField('Current PIN', validators=[DataRequired(), validate_pin_length])
     new_pin = StringField('New PIN', validators=[DataRequired(), validate_pin_length])
+    confirm_pin = StringField('Confirm PIN', validators=[DataRequired(), validate_pin_length, EqualTo('new_pin', message='PINs must match')])
     national_id = StringField('National ID', validators=[DataRequired(), Length(min=5, max=20)])
 
 class QRPinAdminResetForm(FlaskForm):
     admin_password = PasswordField('Admin Password', validators=[DataRequired()])
     new_pin = StringField('New PIN', validators=[DataRequired(), validate_pin_length])
+    confirm_pin = StringField('Confirm PIN', validators=[DataRequired(), validate_pin_length, EqualTo('new_pin', message='PINs must match')])
     member_id = HiddenField('Member ID', validators=[DataRequired()])
 
 class QRVerificationWithPinForm(FlaskForm):
@@ -337,9 +381,10 @@ def register():
                         flash('Invalid photo file. Please upload a JPG, JPEG, or PNG image.', 'danger')
                         return render_template('register.html', form=form)
 
+            # Generate QR code and get token
             try:
-                qr_path, qr_filename = QRGenerator.generate_qr(data)
-                data['qr_code_data'] = qr_path
+                qr_path, qr_filename, qr_token = QRGenerator.generate_qr(data)
+                data['qr_code_data'] = qr_token  # Store the token, not the path
             except Exception as e:
                 logger.error(f"Error generating QR code: {e}")
                 flash('Error generating QR code. Please try again.', 'danger')
@@ -350,8 +395,13 @@ def register():
 
             if member:
                 try:
-                    badge_path, badge_filename = BadgeGenerator.generate_badge(member, include_bleed=True)
-                    update_member(member_id, {'badge_image': badge_filename})
+                    badge_path, badge_filename, badge_qr_token = BadgeGenerator.generate_badge(member, include_bleed=True)
+                    # Store badge image and ensure QR token matches
+                    update_data = {
+                        'badge_image': badge_filename,
+                        'qr_code_data': badge_qr_token  # Use token from badge generation
+                    }
+                    update_member(member_id, update_data)
                     pin_msg = " with PIN protection" if qr_pin_hash else ""
                     flash(f'Member {data["full_name"]} registered successfully{pin_msg}!', 'success')
                 except Exception as e:
@@ -478,11 +528,19 @@ def edit_member(member_id):
                         flash('Invalid photo file. Please upload a JPG, JPEG, or PNG image.', 'danger')
                         return render_template('edit_member.html', form=form, member=member)
 
+            # Update member data first
             update_member(member_id, data)
+            
+            # Get updated member
             updated_member = get_member(member_id)
             if updated_member:
-                badge_path, badge_filename = BadgeGenerator.generate_badge(updated_member, include_bleed=True)
-                update_member(member_id, {'badge_image': badge_filename})
+                # Regenerate badge with new QR code
+                badge_path, badge_filename, qr_token = BadgeGenerator.generate_badge(updated_member, include_bleed=True)
+                # Update with new badge image and QR token
+                update_member(member_id, {
+                    'badge_image': badge_filename,
+                    'qr_code_data': qr_token  # Update QR token as well
+                })
 
             flash('Member details updated successfully!', 'success')
             return redirect(url_for('view_badge', member_id=member_id))
@@ -563,8 +621,11 @@ def download_badge(member_id):
     badge_filename = member.get('badge_image')
     if not badge_filename:
         try:
-            badge_path, badge_filename = BadgeGenerator.generate_badge(member, include_bleed=include_bleed)
-            update_member(member_id, {'badge_image': badge_filename})
+            badge_path, badge_filename, qr_token = BadgeGenerator.generate_badge(member, include_bleed=include_bleed)
+            update_member(member_id, {
+                'badge_image': badge_filename,
+                'qr_code_data': qr_token
+            })
         except Exception as e:
             logger.error(f"Error generating badge: {e}")
             flash('Error generating badge.', 'danger')
@@ -612,8 +673,12 @@ def regenerate_badge(member_id):
             if os.path.exists(old_badge_path):
                 os.remove(old_badge_path)
 
-        badge_path, badge_filename = BadgeGenerator.generate_badge(member, include_bleed=True)
-        update_member(member_id, {'badge_image': badge_filename})
+        # Regenerate badge with new QR
+        badge_path, badge_filename, qr_token = BadgeGenerator.generate_badge(member, include_bleed=True)
+        update_member(member_id, {
+            'badge_image': badge_filename,
+            'qr_code_data': qr_token  # Update QR token
+        })
         flash('Badge regenerated successfully!', 'success')
     except Exception as e:
         logger.error(f"Error regenerating badge: {e}")
@@ -675,6 +740,7 @@ def batch_badges():
             now = datetime.now(timezone.utc)
             for member in members:
                 if results.get(member['member_number'], {}).get('success'):
+                    qr_token = results[member['member_number']].get('qr_token')
                     log_badge_issuance(
                         member['id'],
                         current_user.username,
@@ -687,7 +753,8 @@ def batch_badges():
                         'badge_issued_date': now,
                         'badge_issued_by': current_user.username,
                         'badge_print_count': (member.get('badge_print_count', 0) + 1),
-                        'last_printed': now
+                        'last_printed': now,
+                        'qr_code_data': qr_token  # Ensure QR token is stored
                     })
 
             success_count = sum(1 for r in results.values() if r.get('success'))
@@ -758,37 +825,34 @@ def verify_qr():
         try:
             qr_data = form.qr_data.data.strip()
             
-            # Check if this is a new token format (BBS-xxx-XXXXXXXX)
-            if qr_data.startswith('BBS-'):
-                # Extract member number from token
+            # First try direct token lookup (new format)
+            member = get_member_by_qr_token(qr_data)
+            
+            # If not found by token, try extracting member number (for backward compatibility)
+            if not member and qr_data.startswith('BBS-'):
                 parts = qr_data.split('-')
                 if len(parts) >= 2:
                     member_number = parts[1]
-                    # Try to find member by number first
+                    # Try to find member by number
                     member = get_member_by_number(member_number)
                     if member:
-                        # Check if this member has a token stored
-                        if member.get('qr_code_data') == qr_data:
-                            # Token matches stored token
-                            pass
-                        else:
-                            # Token might be old, but member exists
-                            # We'll still allow verification with PIN
-                            pass
-                else:
-                    # Try direct token lookup
-                    member = get_member_by_qr_token(qr_data)
-            else:
-                # Try direct token lookup for old format or serial
-                member = get_member_by_qr_token(qr_data)
-                
-                # If not found, try searching by member number
-                if not member:
-                    # Check if it's a member number
-                    try:
-                        member = get_member_by_number(qr_data)
-                    except:
-                        pass
+                        # Check if this member's stored token matches
+                        if member.get('qr_code_data') != qr_data:
+                            # Token mismatch - update to new token
+                            # This handles old QR codes with new database
+                            update_member(member['id'], {'qr_code_data': qr_data})
+            
+            # If still not found, try by member number (for very old QR codes)
+            if not member:
+                try:
+                    member = get_member_by_number(qr_data)
+                    if member and not member.get('qr_code_data'):
+                        # Old member without token - generate and store token
+                        new_token = f"BBS-{member['member_number']}-{uuid.uuid4().hex[:8].upper()}"
+                        update_member(member['id'], {'qr_code_data': new_token})
+                        qr_data = new_token
+                except:
+                    pass
             
             if not member:
                 error = 'Invalid QR code. Member not found.'
@@ -914,6 +978,14 @@ def change_qr_pin(member_id):
             new_pin_hash = bcrypt.generate_password_hash(new_pin).decode('utf-8')
             set_qr_pin(member_id, new_pin_hash)
             
+            # Regenerate QR code with new PIN (optional - QR doesn't contain PIN, but good practice)
+            # This ensures the QR token is up to date
+            try:
+                qr_path, qr_filename, qr_token = QRGenerator.regenerate_qr(member)
+                update_member(member_id, {'qr_code_data': qr_token})
+            except Exception as e:
+                logger.warning(f"Could not regenerate QR after PIN change: {e}")
+            
             # Log the change
             log_qr_pin_change(member_id, current_user.username, 'CHANGE', f'PIN changed by {current_user.username}')
             
@@ -958,6 +1030,13 @@ def admin_reset_qr_pin(member_id):
             new_pin_hash = bcrypt.generate_password_hash(new_pin).decode('utf-8')
             set_qr_pin(member_id, new_pin_hash)
             
+            # Regenerate QR code
+            try:
+                qr_path, qr_filename, qr_token = QRGenerator.regenerate_qr(member)
+                update_member(member_id, {'qr_code_data': qr_token})
+            except Exception as e:
+                logger.warning(f"Could not regenerate QR after admin reset: {e}")
+            
             # Log the reset
             log_qr_pin_change(member_id, current_user.username, 'ADMIN_RESET', f'PIN reset by admin {current_user.username}')
             
@@ -985,6 +1064,29 @@ def qr_pin_status(member_id):
     })
 
 # ============================================================
+# QR CODE REGENERATION ROUTE
+# ============================================================
+
+@app.route('/qr/regenerate/<int:member_id>')
+@login_required
+def regenerate_qr(member_id):
+    """Regenerate QR code for a member"""
+    member = get_member(member_id)
+    if not member:
+        flash('Member not found.', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    try:
+        qr_path, qr_filename, qr_token = QRGenerator.regenerate_qr(member)
+        update_member(member_id, {'qr_code_data': qr_token})
+        flash('QR code regenerated successfully!', 'success')
+    except Exception as e:
+        logger.error(f"Error regenerating QR code: {e}")
+        flash('Error regenerating QR code.', 'danger')
+    
+    return redirect(url_for('view_badge', member_id=member_id))
+
+# ============================================================
 # EXPORT ROUTES
 # ============================================================
 
@@ -1007,7 +1109,7 @@ def export_members():
             output = StringIO()
             writer = csv.writer(output)
             headers = ['Member Number', 'Full Name', 'National ID', 'Telephone',
-                      'Group', 'Chairman', 'Badge Issued', 'Date Registered', 'QR PIN Set']
+                      'Group', 'Chairman', 'Badge Issued', 'Date Registered', 'QR PIN Set', 'QR Token']
             writer.writerow(headers)
 
             for m in members:
@@ -1016,7 +1118,8 @@ def export_members():
                     m['telephone'], m['group_stage_name'], m['chairman_name'],
                     'Yes' if m.get('badge_issued') else 'No',
                     m.get('date_registered', ''),
-                    'Yes' if m.get('qr_pin_hash') else 'No'
+                    'Yes' if m.get('qr_pin_hash') else 'No',
+                    m.get('qr_code_data', '')
                 ])
 
             output.seek(0)
@@ -1043,7 +1146,8 @@ def health_check():
             'batch_issuance': True,
             'print_ready': True,
             'authentication': True,
-            'qr_pin_protection': True
+            'qr_pin_protection': True,
+            'pwa': True
         }
     })
 

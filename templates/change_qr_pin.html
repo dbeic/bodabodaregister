@@ -43,6 +43,16 @@
                         </div>
                         
                         <div class="mb-3">
+                            <label for="confirm_pin" class="form-label required">Confirm New PIN</label>
+                            <input type="password" class="form-control" id="confirm_pin" name="confirm_pin" 
+                                   placeholder="Confirm new 4-digit PIN" maxlength="4" pattern="[0-9]{4}" required>
+                            <div class="form-text">
+                                <i class="fas fa-info-circle me-1"></i>
+                                Re-enter your new PIN to confirm
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
                             <label for="national_id" class="form-label required">National ID</label>
                             <input type="text" class="form-control" id="national_id" name="national_id" 
                                    placeholder="Enter your National ID" required>
@@ -59,6 +69,7 @@
                                 <li>You must provide your current PIN to change it</li>
                                 <li>You must enter your National ID to confirm identity</li>
                                 <li>PIN must be exactly 4 digits</li>
+                                <li>New PIN and confirmation must match</li>
                             </ul>
                         </div>
                         
@@ -89,12 +100,16 @@
         background-color: #c9a84a;
         color: white;
     }
+    .required::after {
+        content: ' *';
+        color: #dc3545;
+    }
 </style>
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     // PIN inputs - only allow numbers
-    document.querySelectorAll('#current_pin, #new_pin').forEach(function(input) {
+    document.querySelectorAll('#current_pin, #new_pin, #confirm_pin').forEach(function(input) {
         input.addEventListener('input', function() {
             this.value = this.value.replace(/[^0-9]/g, '').slice(0, 4);
         });

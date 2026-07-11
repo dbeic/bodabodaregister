@@ -19,14 +19,14 @@
             <!-- QR Input Form -->
             <div class="card">
                 <div class="card-body">
-                    <form method="POST" id="verifyForm">
-                        {{ form.hidden_tag() }}
+                    <form method="POST" id="qrForm">
+                        {{ form.csrf_token }}
                         <div class="mb-3">
                             <label for="qr_data" class="form-label">QR Code Data</label>
                             <textarea class="form-control" id="qr_data" name="qr_data" 
-                                      rows="3" placeholder="Paste QR code data here or scan using your phone"></textarea>
+                                      rows="3" placeholder="Paste QR code data here or scan using your phone" required></textarea>
                         </div>
-                        <button type="submit" class="btn btn-gold w-100">
+                        <button type="submit" class="btn btn-gold w-100" name="submit_qr">
                             <i class="fas fa-search me-2"></i>Verify Member
                         </button>
                     </form>
@@ -46,20 +46,28 @@
                         <i class="fas fa-shield-alt me-2"></i>
                         This QR code is PIN protected. Please enter the 4-digit PIN to view member details.
                     </div>
-                    <form method="POST">
-                        {{ pin_form.hidden_tag() }}
-                        <input type="hidden" name="qr_data" value="{{ qr_token or member.qr_code_data }}">
+                    <form method="POST" id="pinForm" autocomplete="off">
+                        {{ pin_form.csrf_token }}
+                        <input type="hidden" name="qr_data" value="{{ qr_token }}">
+                        <input type="hidden" name="pin_submit" value="1">
                         <div class="mb-3">
                             <label for="pin" class="form-label required">Enter 4-digit PIN</label>
-                            <input type="password" class="form-control" id="pin" name="pin" 
-                                   placeholder="Enter PIN" maxlength="4" pattern="[0-9]{4}"
-                                   inputmode="numeric" required>
+                            <div class="pin-input-group">
+                                <input type="text" class="form-control pin-input" id="pin" name="pin"
+                                       placeholder="• • • •" maxlength="4" 
+                                       inputmode="numeric" autocomplete="off" data-lpignore="true"
+                                       pattern="[0-9]{4}" title="Enter 4 digits (0-9)"
+                                       required>
+                                <button type="button" class="pin-toggle-btn" id="togglePin" title="Toggle PIN visibility">
+                                    <i class="fas fa-eye" id="pinIcon"></i>
+                                </button>
+                            </div>
                             <div class="form-text">
                                 <i class="fas fa-info-circle me-1"></i>
                                 Contact the member if you don't have the PIN.
                             </div>
                         </div>
-                        <button type="submit" class="btn btn-success w-100">
+                        <button type="submit" class="btn btn-success w-100" id="verifyPinBtn">
                             <i class="fas fa-unlock me-2"></i>Verify PIN
                         </button>
                     </form>
@@ -91,7 +99,7 @@
 
             <!-- Verified Member Details -->
             {% if verified_member %}
-            <div class="card mt-4 border-success">
+            <div class="card mt-4 border-success" id="memberDetails">
                 <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
                     <h5 class="mb-0"><i class="fas fa-check-circle me-2"></i>Member Verified</h5>
                     <span class="badge bg-light text-dark">
@@ -223,5 +231,82 @@
     .list-group-item {
         background: transparent;
     }
+    
+    .pin-input-group {
+        position: relative;
+    }
+    
+    .pin-input {
+        font-size: 1.5rem;
+        letter-spacing: 0.5rem;
+        font-family: monospace;
+        text-align: center;
+        padding-right: 45px;
+    }
+    
+    .pin-toggle-btn {
+        position: absolute;
+        right: 10px;
+        top: 50%;
+        transform: translateY(-50%);
+        background: none;
+        border: none;
+        color: #6c757d;
+        cursor: pointer;
+        z-index: 10;
+        font-size: 1.2rem;
+        padding: 5px;
+    }
+    
+    .pin-toggle-btn:hover {
+        color: var(--gold);
+    }
+    
+    .required::after {
+        content: ' *';
+        color: #dc3545;
+    }
 </style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // PIN input handling
+    const pinInput = document.getElementById('pin');
+    const toggleBtn = document.getElementById('togglePin');
+    const pinIcon = document.getElementById('pinIcon');
+    
+    if (pinInput) {
+        // Only allow numbers
+        pinInput.addEventListener('input', function() {
+            this.value = this.value.replace(/[^0-9]/g, '').slice(0, 4);
+            // Update placeholder with dots
+            if (this.value.length > 0) {
+                this.placeholder = '•'.repeat(this.value.length) + '•'.repeat(4 - this.value.length);
+            } else {
+                this.placeholder = '• • • •';
+            }
+        });
+        
+        // Focus/Blur for dots
+        pinInput.addEventListener('focus', function() {
+            if (this.value.length > 0) {
+                this.placeholder = '•'.repeat(this.value.length) + '•'.repeat(4 - this.value.length);
+            }
+        });
+        
+        pinInput.addEventListener('blur', function() {
+            this.placeholder = '• • • •';
+        });
+    }
+    
+    // Toggle PIN visibility
+    if (toggleBtn && pinInput) {
+        toggleBtn.addEventListener('click', function() {
+            const isText = pinInput.type === 'text';
+            pinInput.type = isText ? 'password' : 'text';
+            pinIcon.className = isText ? 'fas fa-eye-slash' : 'fas fa-eye';
+        });
+    }
+});
+</script>
 {% endblock %}
