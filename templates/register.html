@@ -79,6 +79,29 @@
         padding: 10px 15px;
         margin-top: 5px;
     }
+    
+    /* PIN input styling - prevents password manager prompts */
+    .pin-input {
+        font-size: 1.5rem;
+        letter-spacing: 0.5rem;
+        font-family: monospace;
+        text-align: center;
+    }
+    
+    .pin-input-wrapper {
+        position: relative;
+    }
+    
+    .pin-input-wrapper .pin-toggle {
+        position: absolute;
+        right: 10px;
+        top: 50%;
+        transform: translateY(-50%);
+        background: none;
+        border: none;
+        color: #6c757d;
+        cursor: pointer;
+    }
 </style>
 {% endblock %}
 
@@ -191,9 +214,14 @@
                 <div class="col-md-6">
                     <div class="mb-3">
                         <label for="qr_pin" class="form-label">Set QR PIN (4 digits)</label>
-                        <input type="password" class="form-control" id="qr_pin" name="qr_pin" 
-                               placeholder="Enter 4-digit PIN" maxlength="4" pattern="[0-9]{4}"
-                               inputmode="numeric">
+                        <div class="pin-input-wrapper">
+                            <input type="text" class="form-control pin-input" id="qr_pin" name="qr_pin" 
+                                   placeholder="• • • •" maxlength="4" pattern="[0-9]{4}"
+                                   inputmode="numeric" autocomplete="off" data-lpignore="true">
+                            <button type="button" class="pin-toggle" id="togglePinVisibility">
+                                <i class="fas fa-eye" id="pinVisibilityIcon"></i>
+                            </button>
+                        </div>
                         <small class="text-muted">
                             <i class="fas fa-info-circle"></i> 
                             PIN is required to view QR code information. Leave empty to skip.
@@ -281,11 +309,40 @@ document.addEventListener('DOMContentLoaded', function() {
         form.classList.add('was-validated');
     });
 
-    // PIN input validation - only allow numbers
+    // PIN input validation - only allow numbers, show dots
     const pinInput = document.getElementById('qr_pin');
     if (pinInput) {
         pinInput.addEventListener('input', function() {
+            // Only allow numbers
             this.value = this.value.replace(/[^0-9]/g, '').slice(0, 4);
+            // Show dots as placeholder
+            if (this.value.length > 0) {
+                this.placeholder = '•'.repeat(this.value.length) + '•'.repeat(4 - this.value.length);
+            } else {
+                this.placeholder = '• • • •';
+            }
+        });
+        
+        // Focus/Blur to show dots
+        pinInput.addEventListener('focus', function() {
+            if (this.value.length > 0) {
+                this.placeholder = '•'.repeat(this.value.length) + '•'.repeat(4 - this.value.length);
+            }
+        });
+        
+        pinInput.addEventListener('blur', function() {
+            this.placeholder = '• • • •';
+        });
+    }
+
+    // Toggle PIN visibility
+    const togglePinBtn = document.getElementById('togglePinVisibility');
+    const pinVisibilityIcon = document.getElementById('pinVisibilityIcon');
+    if (togglePinBtn && pinInput) {
+        togglePinBtn.addEventListener('click', function() {
+            const isText = pinInput.type === 'text';
+            pinInput.type = isText ? 'password' : 'text';
+            pinVisibilityIcon.className = isText ? 'fas fa-eye-slash' : 'fas fa-eye';
         });
     }
 

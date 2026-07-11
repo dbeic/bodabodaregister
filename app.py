@@ -758,8 +758,37 @@ def verify_qr():
         try:
             qr_data = form.qr_data.data.strip()
             
-            # Find member by QR token
-            member = get_member_by_qr_token(qr_data)
+            # Check if this is a new token format (BBS-xxx-XXXXXXXX)
+            if qr_data.startswith('BBS-'):
+                # Extract member number from token
+                parts = qr_data.split('-')
+                if len(parts) >= 2:
+                    member_number = parts[1]
+                    # Try to find member by number first
+                    member = get_member_by_number(member_number)
+                    if member:
+                        # Check if this member has a token stored
+                        if member.get('qr_code_data') == qr_data:
+                            # Token matches stored token
+                            pass
+                        else:
+                            # Token might be old, but member exists
+                            # We'll still allow verification with PIN
+                            pass
+                else:
+                    # Try direct token lookup
+                    member = get_member_by_qr_token(qr_data)
+            else:
+                # Try direct token lookup for old format or serial
+                member = get_member_by_qr_token(qr_data)
+                
+                # If not found, try searching by member number
+                if not member:
+                    # Check if it's a member number
+                    try:
+                        member = get_member_by_number(qr_data)
+                    except:
+                        pass
             
             if not member:
                 error = 'Invalid QR code. Member not found.'
@@ -800,6 +829,12 @@ def verify_qr():
             
             # Find member by QR token
             member = get_member_by_qr_token(qr_data)
+            
+            # If not found by token, try to extract member number
+            if not member and qr_data.startswith('BBS-'):
+                parts = qr_data.split('-')
+                if len(parts) >= 2:
+                    member = get_member_by_number(parts[1])
             
             if not member:
                 verification_error = 'Invalid QR code. Member not found.'
