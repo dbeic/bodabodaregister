@@ -1,0 +1,257 @@
+{% extends "base.html" %}
+
+{% block title %}Pay for Badge - BBS (Busia Bodaboda SACCO){% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="fas fa-credit-card text-gold me-2"></i>
+                        Badge Issuance Payment
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle me-2"></i>
+                        <strong>Member:</strong> {{ member.full_name }} ({{ member.member_number }})
+                        <br>
+                        <strong>Amount:</strong> KES {{ amount }}
+                    </div>
+                    
+                    <div class="text-center mb-4">
+                        <i class="fas fa-mobile-alt fa-4x text-gold"></i>
+                        <h5 class="mt-3">Pay with M-Pesa</h5>
+                        <p class="text-muted">You will receive a prompt on your phone to complete the payment.</p>
+                    </div>
+                    
+                    <form id="paymentForm" method="POST" action="{{ url_for('initiate_payment', member_id=member.id) }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="amount" value="{{ amount }}">
+                        
+                        <div class="mb-3">
+                            <label for="phone_number" class="form-label required">M-Pesa Phone Number</label>
+                            <div class="input-group">
+                                <span class="input-group-text">+254</span>
+                                <input type="tel" class="form-control" id="phone_number" name="phone_number" 
+                                       placeholder="712345678" required pattern="7[0-9]{8}"
+                                       value="{{ current_user.phone or '' }}">
+                            </div>
+                            <div class="form-text">
+                                <i class="fas fa-info-circle me-1"></i>
+                                Enter the phone number registered with M-Pesa (format: 712345678)
+                            </div>
+                        </div>
+                        
+                        <div class="alert alert-warning">
+                            <i class="fas fa-exclamation-triangle me-2"></i>
+                            <strong>Important:</strong>
+                            <ul class="mb-0 mt-1">
+                                <li>Payment amount: <strong>KES {{ amount }}</strong></li>
+                                <li>You will receive an M-Pesa prompt on your phone</li>
+                                <li>Enter your M-Pesa PIN to complete the payment</li>
+                                <li>The badge will be issued automatically upon successful payment</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-gold btn-lg" id="payBtn">
+                                <i class="fas fa-mobile-alt me-2"></i>Pay KES {{ amount }} with M-Pesa
+                            </button>
+                            <a href="{{ url_for('view_badge', member_id=member.id) }}" class="btn btn-outline-secondary">
+                                <i class="fas fa-arrow-left me-2"></i>Cancel
+                            </a>
+                        </div>
+                    </form>
+                    
+                    <!-- Payment Status -->
+                    <div id="paymentStatus" class="mt-4" style="display:none;">
+                        <div class="alert alert-info" id="statusMessage">
+                            <i class="fas fa-spinner fa-spin me-2"></i>
+                            Waiting for payment confirmation...
+                        </div>
+                        <div class="progress">
+                            <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                                 id="statusProgress" 
+                                 role="progressbar" 
+                                 style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card mt-4">
+                <div class="card-body text-center text-muted small">
+                    <i class="fas fa-shield-alt me-1"></i>
+                    Secured Payment. Your M-Pesa transaction is protected.
+                    <br>
+                    For support: contact BBS (Busia Bodaboda SACCO)
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .text-gold {
+        color: var(--gold);
+    }
+    .btn-gold {
+        background: linear-gradient(135deg, var(--gold), #c9a84a);
+        color: white;
+        border: none;
+        font-weight: 600;
+    }
+    .btn-gold:hover {
+        background: linear-gradient(135deg, #c9a84a, #b8952d);
+        color: white;
+    }
+    .btn-gold:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+    .required::after {
+        content: ' *';
+        color: #dc3545;
+    }
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('paymentForm');
+    const payBtn = document.getElementById('payBtn');
+    const statusDiv = document.getElementById('paymentStatus');
+    const statusMessage = document.getElementById('statusMessage');
+    const progressBar = document.getElementById('statusProgress');
+    
+    // Phone number formatting
+    const phoneInput = document.getElementById('phone_number');
+    phoneInput.addEventListener('input', function() {
+        this.value = this.value.replace(/[^0-9]/g, '').slice(0, 9);
+    });
+    
+    // Form submission
+    form.addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        const phone = phoneInput.value.trim();
+        if (!phone || phone.length !== 9) {
+            alert('Please enter a valid phone number (712345678)');
+            return;
+        }
+        
+        // Show status
+        statusDiv.style.display = 'block';
+        payBtn.disabled = true;
+        payBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Processing...';
+        
+        // Submit via AJAX
+        const formData = new FormData(form);
+        const data = Object.fromEntries(formData.entries());
+        
+        fetch(form.action, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('input[name="csrf_token"]').value
+            },
+            body: JSON.stringify(data)
+        })
+        .then(response => response.json())
+        .then(result => {
+            if (result.success) {
+                statusMessage.innerHTML = `
+                    <i class="fas fa-check-circle text-success me-2"></i>
+                    ${result.message}
+                    <br>
+                    <small class="text-muted">Waiting for M-Pesa confirmation...</small>
+                `;
+                progressBar.style.width = '50%';
+                progressBar.textContent = '50%';
+                
+                // Poll for status
+                const checkoutId = result.checkout_request_id;
+                pollStatus(checkoutId);
+            } else {
+                statusMessage.innerHTML = `
+                    <i class="fas fa-times-circle text-danger me-2"></i>
+                    ${result.message}
+                `;
+                progressBar.style.width = '100%';
+                progressBar.className = 'progress-bar bg-danger';
+                payBtn.disabled = false;
+                payBtn.innerHTML = '<i class="fas fa-mobile-alt me-2"></i>Pay KES {{ amount }} with M-Pesa';
+            }
+        })
+        .catch(error => {
+            statusMessage.innerHTML = `
+                <i class="fas fa-times-circle text-danger me-2"></i>
+                Error processing payment. Please try again.
+            `;
+            payBtn.disabled = false;
+            payBtn.innerHTML = '<i class="fas fa-mobile-alt me-2"></i>Pay KES {{ amount }} with M-Pesa';
+        });
+    });
+    
+    function pollStatus(checkoutId) {
+        let attempts = 0;
+        const maxAttempts = 30; // 30 seconds
+        
+        const interval = setInterval(() => {
+            attempts++;
+            progressBar.style.width = `${30 + (attempts * 2)}%`;
+            progressBar.textContent = `${30 + (attempts * 2)}%`;
+            
+            fetch(`/payment/status/${checkoutId}`)
+                .then(response => response.json())
+                .then(result => {
+                    if (result.success && result.data) {
+                        const data = result.data;
+                        if (data.ResultCode === '0') {
+                            // Payment successful
+                            clearInterval(interval);
+                            statusMessage.innerHTML = `
+                                <i class="fas fa-check-circle text-success me-2"></i>
+                                ✅ Payment successful! Redirecting to badge...
+                            `;
+                            progressBar.style.width = '100%';
+                            progressBar.textContent = '100%';
+                            
+                            setTimeout(() => {
+                                window.location.href = '{{ url_for("view_badge", member_id=member.id) }}';
+                            }, 2000);
+                        } else if (data.ResultCode) {
+                            // Payment failed
+                            clearInterval(interval);
+                            statusMessage.innerHTML = `
+                                <i class="fas fa-times-circle text-danger me-2"></i>
+                                Payment failed: ${data.ResultDesc || 'Unknown error'}
+                            `;
+                            progressBar.className = 'progress-bar bg-danger';
+                            payBtn.disabled = false;
+                            payBtn.innerHTML = '<i class="fas fa-mobile-alt me-2"></i>Pay KES {{ amount }} with M-Pesa';
+                        }
+                    }
+                    
+                    if (attempts >= maxAttempts) {
+                        clearInterval(interval);
+                        statusMessage.innerHTML = `
+                            <i class="fas fa-clock text-warning me-2"></i>
+                            Payment still processing. Check your M-Pesa messages.
+                            <br>
+                            <small class="text-muted">The badge will be issued when payment is confirmed.</small>
+                        `;
+                        payBtn.disabled = false;
+                        payBtn.innerHTML = '<i class="fas fa-mobile-alt me-2"></i>Retry Payment';
+                    }
+                })
+                .catch(() => {
+                    // Continue polling
+                });
+        }, 1000);
+    }
+});
+</script>
+{% endblock %}

@@ -19,14 +19,14 @@
             <!-- QR Input Form -->
             <div class="card">
                 <div class="card-body">
-                    <form method="POST" id="qrForm">
-                        {{ form.csrf_token }}
+                    <form method="POST">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <div class="mb-3">
                             <label for="qr_data" class="form-label">QR Code Data</label>
                             <textarea class="form-control" id="qr_data" name="qr_data" 
                                       rows="3" placeholder="Paste QR code data here or scan using your phone" required></textarea>
                         </div>
-                        <button type="submit" class="btn btn-gold w-100" name="submit_qr">
+                        <button type="submit" class="btn btn-gold w-100">
                             <i class="fas fa-search me-2"></i>Verify Member
                         </button>
                     </form>
@@ -46,10 +46,9 @@
                         <i class="fas fa-shield-alt me-2"></i>
                         This QR code is PIN protected. Please enter the 4-digit PIN to view member details.
                     </div>
-                    <form method="POST" id="pinForm" autocomplete="off">
-                        {{ pin_form.csrf_token }}
-                        <input type="hidden" name="qr_data" value="{{ qr_token }}">
-                        <input type="hidden" name="pin_submit" value="1">
+                    <form method="POST" autocomplete="off">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="qr_data" value="{{ qr_token or member.qr_code_data }}">
                         <div class="mb-3">
                             <label for="pin" class="form-label required">Enter 4-digit PIN</label>
                             <div class="pin-input-group">
@@ -67,7 +66,7 @@
                                 Contact the member if you don't have the PIN.
                             </div>
                         </div>
-                        <button type="submit" class="btn btn-success w-100" id="verifyPinBtn">
+                        <button type="submit" class="btn btn-success w-100">
                             <i class="fas fa-unlock me-2"></i>Verify PIN
                         </button>
                     </form>
@@ -99,7 +98,7 @@
 
             <!-- Verified Member Details -->
             {% if verified_member %}
-            <div class="card mt-4 border-success" id="memberDetails">
+            <div class="card mt-4 border-success">
                 <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
                     <h5 class="mb-0"><i class="fas fa-check-circle me-2"></i>Member Verified</h5>
                     <span class="badge bg-light text-dark">
@@ -270,16 +269,13 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    // PIN input handling
     const pinInput = document.getElementById('pin');
     const toggleBtn = document.getElementById('togglePin');
     const pinIcon = document.getElementById('pinIcon');
     
     if (pinInput) {
-        // Only allow numbers
         pinInput.addEventListener('input', function() {
             this.value = this.value.replace(/[^0-9]/g, '').slice(0, 4);
-            // Update placeholder with dots
             if (this.value.length > 0) {
                 this.placeholder = '•'.repeat(this.value.length) + '•'.repeat(4 - this.value.length);
             } else {
@@ -287,7 +283,6 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
         
-        // Focus/Blur for dots
         pinInput.addEventListener('focus', function() {
             if (this.value.length > 0) {
                 this.placeholder = '•'.repeat(this.value.length) + '•'.repeat(4 - this.value.length);
@@ -299,7 +294,6 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
-    // Toggle PIN visibility
     if (toggleBtn && pinInput) {
         toggleBtn.addEventListener('click', function() {
             const isText = pinInput.type === 'text';
