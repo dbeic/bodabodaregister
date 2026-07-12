@@ -443,11 +443,13 @@ class BadgeGenerator:
                          fill=crop_color, width=1)
             
             # ============================================================
-            # SAVE BADGE
+            # SAVE BADGE - HIGH QUALITY
             # ============================================================
             filename = f"badge_{member_data['member_number']}.png"
             filepath = os.path.join(Config.BADGE_FOLDER, filename)
-            img.save(filepath, 'PNG', quality=95, dpi=(Config.BADGE_DPI, Config.BADGE_DPI))
+            
+            # Save with maximum quality and DPI settings from config
+            img.save(filepath, 'PNG', quality=100, dpi=(Config.BADGE_DPI, Config.BADGE_DPI), optimize=False)
             
             logger.info(f"Security badge generated for member: {member_data['member_number']} with QR token: {qr_token}")
             return filepath, filename, qr_token
